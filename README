@@ -1,0 +1,14 @@
+80over53 - HTTP-over-DNS Server and Client Tools
+
+Copyright(c) 2015 256 LLC
+Written by Christopher Abad
+20 GOTO 10
+
+email: aempirei@gmail.com aempirei@256.bz
+https://github.com/aempirei/80over53.git
+http://www.256.bz/
+aim: ambientempire
+
+Useful for network environments that seem to process
+dns requests but otherwise filter all other traffic.
+Uses should be obvious.
