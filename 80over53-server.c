@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdint.h>
+#include <stdatomic.h>
 
 #include <string.h>
 #include <errno.h>
