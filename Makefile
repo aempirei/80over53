@@ -1,6 +1,6 @@
 CC = gcc
-CCFLAGS = -Wall -W -w
-CFLAGS = -Wall -W -I. -pedantic -std=gnu11
+CCFLAGS = -Wall
+CFLAGS = -Wall -I. -pedantic -std=gnu11 -Wno-unused-variable
 LIBFLAGS =
 PROGRAMS = 80over53-server
 INSTALL_PATH = /usr/local/bin

@@ -85,6 +85,28 @@ configuration_t default_config = {
 	.fp = NULL
 };
 
+struct dns_header {
+	uint16_t id;
+
+	uint16_t qr:1,
+			 opcode:4,
+			 aa:1,
+			 tc:1,
+			 rd:1,
+			 ra:1,
+			 z:3,
+			 rcode:4;
+
+	uint16_t qdcount;
+	uint16_t ancount;
+	uint16_t nscount;
+	uint16_t arcount;
+
+} __attribute__ ((__packed__));
+
+ssize_t expand_label(size_t offset, void *data, size_t data_sz, char *label, size_t label_sz);
+ssize_t expand_name(size_t offset, void *data, size_t data_sz, char *name, size_t name_sz);
+
 const char *default_action(int default_value) {
     return default_value ? "disable" : "enable";
 }
@@ -196,15 +218,15 @@ void sighandler(int signo) {
 #define HTTPFD_SZ 16
 #define DATA_SZ 2048
 
-ssize_t recvfrom_fd_data(configuration_t * config, int fd, void *data, size_t data_sz, struct sockaddr_in *sin) {
+ssize_t recvfrom_fd_data(configuration_t * config, int fd, void *data, size_t data_sz, struct sockaddr_in *p_sin) {
 
 
 	socklen_t addrlen;
 	ssize_t n;
 
-	addrlen = sizeof(*sin);
+	addrlen = sizeof(*p_sin);
 
-	n = recvfrom(fd, data, data_sz, 0, (struct sockaddr *)sin, &addrlen);
+	n = recvfrom(fd, data, data_sz, 0, (struct sockaddr *)p_sin, &addrlen);
 	if(n == -1)
 		return -1;
 
@@ -212,12 +234,12 @@ ssize_t recvfrom_fd_data(configuration_t * config, int fd, void *data, size_t da
 
 		char buf[20];
 
-		if(inet_ntop(AF_INET, &(sin->sin_addr), buf, sizeof(buf)) == NULL) {
+		if(inet_ntop(AF_INET, &(p_sin->sin_addr), buf, sizeof(buf)) == NULL) {
 			perror("inet_ntop()");
 			exit(EXIT_FAILURE);
 		}
 
-		fprintf(config->fp, "fd #%d data ready : read %ld bytes from %s:%d\n", fd, (long)n, buf, ntohs(sin->sin_port));
+		fprintf(config->fp, "fd #%d data ready : read %ld bytes from %s:%d\n", fd, (long)n, buf, ntohs(p_sin->sin_port));
 	}
 
 	return n;
@@ -235,21 +257,41 @@ int int_array_shift(int *xs, size_t *xs_n) {
 	return x;
 }
 
+enum http_method { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
+
 void generate_http_request(void *data, ssize_t data_sz, int *httpfd, size_t *p_httpfd_n) {
 
-	if(data != NULL && data_sz > 0) {
+	struct sockaddr_in sin_to;
 
-		if(*p_httpfd_n == HTTPFD_SZ) {
+	int fd;
 
-			fprintf(stderr, "too many http connections open, closing oldest...");
+	enum http_method method = GET;
+	size_t content_length;
+	char content[8192];
+	char abs_path[2048];
+	char ip_string[20];
+	uint16_t port = 80;
 
-			close(int_array_shift(httpfd, p_httpfd_n));
-		}
-
-		httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
-
-		(*p_httpfd_n)++;
+	memset(&sin_to, 0, sizeof(sin_to));
+	sin_to.sin_family = AF_INET;
+	sin_to.sin_port = htons(port);
+	if(inet_pton(AF_INET, ip_string, &sin_to.sin_addr) == -1) {
+		perror("inet_pton()");
+		exit(EXIT_FAILURE);
 	}
+
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+
+	if(*p_httpfd_n == HTTPFD_SZ) {
+
+		fprintf(stderr, "too many http connections open, closing oldest...");
+
+		close(int_array_shift(httpfd, p_httpfd_n));
+	}
+
+	httpfd[*p_httpfd_n] = fd;
+
+	(*p_httpfd_n)++;
 }
 
 void http_over_dns(configuration_t * config) {
@@ -361,7 +403,7 @@ void http_over_dns(configuration_t * config) {
 		if(left > 0 && FD_ISSET(dnsfd, &rfds)) {
 
 			sz = recvfrom_fd_data(config, dnsfd, data, DATA_SZ, &sin_from);
-			if(sz == -1) {
+			if(sz == -1 && errno == EAGAIN) {
 				if(errno != EAGAIN) {
 					perror("recvfrom()");
 					exit(EXIT_FAILURE);
