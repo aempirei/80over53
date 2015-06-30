@@ -204,8 +204,10 @@ void generate_http_request(void *data, ssize_t data_sz, int *httpfd, size_t *p_h
 			(*p_httpfd_n)--;
 		}
 
-		httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
-		(*p_httpfd_n)++;
+		if(0) {
+			httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
+			(*p_httpfd_n)++;
+		}
 	}
 }
 
@@ -332,7 +334,7 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 					exit(EXIT_FAILURE);
 				}
 
-				fprintf(fpout, "dnsfd data ready : read %ld bytes from %s:%d\n", (long)sz, ip_string, ntohs(sin_from.sin_port));
+				fprintf(fpout, "dns-fd data ready : read %ld bytes from %s:%d\n", (long)sz, ip_string, ntohs(sin_from.sin_port));
 			}
 
 			generate_http_request(data, sz, httpfd, &httpfd_n);
@@ -350,6 +352,9 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 				left--;
 			}
 		}
+
+		if(config->verbose)
+			fprintf(fpout, "%ld http-fds\n", httpfd_n);
 	}
 
 	fprintf(fpout, "cleaning up...\n");
