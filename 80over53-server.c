@@ -16,6 +16,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <limits.h>
 
 #include <locale.h>
 #include <wchar.h>
@@ -25,6 +26,7 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <sys/select.h>
@@ -68,11 +70,15 @@
 typedef struct configuration {
 	int verbose;
     const char *locale;
+	uint32_t address;
+	uint16_t port;
 } configuration_t;
 
 const configuration_t default_config = {
 	.verbose = 0,
-    .locale = ""
+    .locale = "",
+	.address = INADDR_ANY,
+	.port = 53
 };
 
 const char *default_action(int default_value) {
@@ -90,8 +96,20 @@ void usage(const char *arg0) {
 
     fprintf(stderr, "\nusage: %s [options] [file]...\n\n", arg0);
 
+	char ip_string[20];
+	char port_string[20];
+
+	if(inet_ntop(AF_INET, &default_config.address, ip_string, sizeof(ip_string)) == NULL) {
+		perror("inet_ntop()");
+		exit(EXIT_FAILURE);
+	}
+
+	snprintf(port_string, sizeof(port_string), "%d", default_config.port);
+
     usage_print("-h", "show", "this help");
     usage_print("-v", default_action(default_config.verbose), "verbose output");
+	usage_print("-4 ip", "IPv4 bind address, default:", ip_string);
+	usage_print("-p port", "UDP bind port, default:", port_string);
     usage_print("-l locale", "use", "specified locale string");
 
     fputc('\n', stderr);
@@ -105,10 +123,28 @@ int cliconfig(configuration_t * config, int argc, char **argv) {
 
     opterr = 0;
 
-    while ((opt = getopt(argc, argv, "hvl:")) != -1) {
+	struct in_addr addr;
+	unsigned long port;
+
+    while ((opt = getopt(argc, argv, "hv4:p:l:")) != -1) {
         switch (opt) {
         case 'v':
             config->verbose = !default_config.verbose;
+            break;
+		case '4':
+			if(inet_pton(AF_INET, optarg, &addr) == -1) {
+				perror("inet_pton()");
+				exit(EXIT_FAILURE);
+			}
+			config->address = addr.s_addr;
+            break;
+		case 'p':
+			port = strtoul(optarg, NULL, 0);
+			if(port == ULONG_MAX && errno == ERANGE) {
+				perror("strtoul()");
+				exit(EXIT_FAILURE);
+			}
+			config->port = port;
             break;
         case 'l':
             config->locale = optarg;
@@ -158,6 +194,22 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
         exit(EXIT_FAILURE);
     }
 
+	if(config->verbose) {
+
+		char ip_string[20];
+
+		if(config->address == INADDR_ANY) {
+			strcpy(ip_string, "*");
+		} else if(inet_ntop(AF_INET, &config->address, ip_string, sizeof(ip_string)) == NULL) {
+			perror("inet_ntop()");
+			exit(EXIT_FAILURE);
+		}
+
+		fprintf(fpout, "address: %s:%d\n", ip_string, config->port);
+		fprintf(fpout, "verbose: %s\n", config->verbose ? "true" : "false");
+		fprintf(fpout, " locale: \"%s\"\n", config->locale);
+	}
+
 	if(setuid(0) == -1) {
 		perror("setuid()");
 		exit(EXIT_FAILURE);
@@ -186,8 +238,8 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_port = htons(53);
-	sin.sin_addr.s_addr = INADDR_ANY;
+	sin.sin_port = htons(config->port);
+	sin.sin_addr.s_addr = config->address;
 
 	if(bind(dnsfd, (const struct sockaddr *)&sin, sizeof(sin)) == -1) {
 		perror("bind()");
