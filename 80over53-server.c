@@ -23,6 +23,7 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #include <netinet/in.h>
 #include <sys/time.h>
@@ -65,20 +66,12 @@
  */
 
 typedef struct configuration {
-    int numeric_markup;
-    int alpha_markup;
-    int wide_markup;
-    int dynamic_mode;
-    int compression_mode;
+	int verbose;
     const char *locale;
 } configuration_t;
 
 const configuration_t default_config = {
-    .numeric_markup = 1,
-    .alpha_markup = 0,
-    .wide_markup = 0,
-    .dynamic_mode = 0,
-    .compression_mode = 0,
+	.verbose = 0,
     .locale = ""
 };
 
@@ -98,11 +91,7 @@ void usage(const char *arg0) {
     fprintf(stderr, "\nusage: %s [options] [file]...\n\n", arg0);
 
     usage_print("-h", "show", "this help");
-    usage_print("-n", default_action(default_config.numeric_markup), "numeric markup");
-    usage_print("-a", default_action(default_config.alpha_markup), "alpha markup");
-    usage_print("-w", default_action(default_config.wide_markup), "wide markup");
-    usage_print("-d", default_action(default_config.dynamic_mode), "dynamic mode");
-    usage_print("-c", default_action(default_config.compression_mode), "compression mode");
+    usage_print("-v", default_action(default_config.verbose), "verbose output");
     usage_print("-l locale", "use", "specified locale string");
 
     fputc('\n', stderr);
@@ -116,24 +105,10 @@ int cliconfig(configuration_t * config, int argc, char **argv) {
 
     opterr = 0;
 
-    while ((opt = getopt(argc, argv, "hdcnawvl:")) != -1) {
+    while ((opt = getopt(argc, argv, "hvl:")) != -1) {
         switch (opt) {
-            /*
-               case 'd':
-               config->dynamic_mode = !default_config.dynamic_mode;
-               break;
-               case 'c':
-               config->compression_mode = !default_config.compression_mode;
-               break;
-             */
-        case 'n':
-            config->numeric_markup = !default_config.numeric_markup;
-            break;
-        case 'a':
-            config->alpha_markup = !default_config.alpha_markup;
-            break;
-        case 'w':
-            config->wide_markup = !default_config.wide_markup;
+        case 'v':
+            config->verbose = !default_config.verbose;
             break;
         case 'l':
             config->locale = optarg;
@@ -155,73 +130,85 @@ int cliconfig(configuration_t * config, int argc, char **argv) {
     return optind;
 }
 
-int print_eilseq(int ch, FILE * fp) {
-    return fwprintf(fp, L"\33[46;31m\\x%02x\33[0m", ch);
+sig_atomic_t done = 0;
+
+void sighandler(int signo) {
+	signal(signo, SIG_IGN);
+	done = 1;
 }
 
-int print_wide(int ch, FILE * fp) {
-    return fwprintf(fp, L"\33[1;31m%lc\33[0m", ch);
-}
+#define HTTPFD_SZ 16
 
-int print_numeric(wint_t ch, FILE * fp) {
-    int value = ch - L'0';
-    const int codea[] = { 30, 37, 36, 31, 34, 33, 32, 35, 34, 31 };
-    const int codeb[] = { 01, 01, 01, 00, 01, 01, 00, 00, 00, 01 };
-    return fwprintf(fp, L"\33[%d;%dm%lc\33[0m", codeb[value], codea[value], ch);
-}
+void http_over_dns(configuration_t * config, FILE * fpout) {
 
-int print_alpha(wint_t ch, FILE * fp) {
-    wint_t value = towlower(ch) - L'a';
+	struct sockaddr_in sin;
 
-    return fwprintf(fp, L"\33[%d;%dm%lc\33[0m", (value / 6) & 1, 31 + (value % 6), ch);
-}
+	int httpfd[HTTPFD_SZ];
+	int dnsfd = -1;
+	size_t httpfd_n = 0;
+	int maxfd;
 
-void synescat(configuration_t * config, FILE * fpin, FILE * fpout) {
+	const int nsecs = 1;
 
-    wint_t wch;
-    int ch;
+	fd_set rfds;
 
     if (setlocale(LC_CTYPE, config->locale) == NULL) {
         fprintf(stderr, "failed to set locale LC_CTYPE=\"%s\"\n", config->locale);
         exit(EXIT_FAILURE);
     }
 
-    for (;;) {
+	if(setuid(0) == -1) {
+		perror("setuid()");
+		exit(EXIT_FAILURE);
+	}
 
-        wch = fgetwc(fpin);
+	dnsfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(dnsfd == -1) {
+		perror("socket()");
+		exit(EXIT_FAILURE);
+	}
 
-        if (wch == WEOF) {
-            if (feof(fpin)) {
-                break;
-            } else if (errno == EILSEQ) {
-                if ((ch = fgetc(fpin)) == EOF) {
-                    if (feof(fpin)) {
-                        break;
-                    } else {
-                        perror("fgetc()");
-                        exit(EXIT_FAILURE);
-                    }
-                }
-                print_eilseq(ch, fpout);
-            } else {
-                perror("fgetwc()");
-                exit(EXIT_FAILURE);
-            }
-        } else {
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(53);
+	sin.sin_addr.s_addr = INADDR_ANY;
 
-            if (config->numeric_markup && iswdigit(wch)) {
-                print_numeric(wch, fpout);
-            } else if (config->alpha_markup && iswalpha(wch)) {
-                print_alpha(wch, fpout);
-            } else if (config->wide_markup && wch > 255) {
-                print_wide(wch, fpout);
-            } else if (fputwc(wch, fpout) == WEOF) {
-                fprintf(stderr, "fputwc(0x%02x,...)", wch);
-                perror("");
-                exit(EXIT_FAILURE);
-            }
-        }
+	if(bind(dnsfd, (const struct sockaddr *)&sin, sizeof(sin)) == -1) {
+		perror("bind()");
+		exit(EXIT_FAILURE);
+	}
+
+	FD_ZERO(&rfds);
+
+	FD_SET(dnsfd, &rfds);
+	maxfd = dnsfd;
+
+	for(size_t n = 0; n < httpfd_n; n++) {
+		FD_SET(httpfd[n], &rfds);
+		if(httpfd[n] > maxfd)
+			maxfd = httpfd[n];
+	}
+
+	while(!done) {
+		fprintf(fpout, "sleeping %d seconds...\n", nsecs);
+		sleep(nsecs);
     }
+
+	fprintf(fpout, "cleaning up...\n");
+
+	fclose(fpout);
+
+	if(dnsfd != -1) {
+		close(dnsfd);
+		dnsfd = -1;
+	}
+
+	for(size_t n = 0; n < httpfd_n; n++)
+		close(httpfd_n);
+
+	httpfd_n = 0;
+
+	fprintf(fpout, "goodbye!\n");
 
 }
 
@@ -245,25 +232,16 @@ void eprintf(int errnum, const char *format, ...) {
 
 int main(int argc, char **argv) {
 
-    const char fopen_mode[] = "r";
+	configuration_t config;
 
-    configuration_t config;
-    FILE *fp;
+	int lastopt = cliconfig(&config, argc, argv);
 
-    int files_index = cliconfig(&config, argc, argv);
+	if (lastopt != argc) {
+		fprintf(stderr, "too many arguments\n");
+		exit(EXIT_FAILURE);
+	}
 
-    if (files_index == argc) {
-        synescat(&config, stdin, stdout);
-    } else {
-        for (int i = files_index; i < argc; i++) {
-            if ((fp = fopen(argv[i], fopen_mode)) == NULL) {
-                eprintf(errno, "fopen(\"%s\",\"%s\")", argv[i], fopen_mode);
-            } else {
-                synescat(&config, fp, stdout);
-                fclose(fp);
-            }
-        }
-    }
+	http_over_dns(&config, stdout);
 
-    exit(EXIT_SUCCESS);
+	exit(EXIT_SUCCESS);
 }
