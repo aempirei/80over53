@@ -175,19 +175,25 @@ void sighandler(int signo) {
 }
 
 #define HTTPFD_SZ 16
+#define DATA_SZ 2048
 
 void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	struct sockaddr_in sin;
 
+	size_t httpfd_n = 0;
+
 	int httpfd[HTTPFD_SZ];
 	int dnsfd = -1;
-	size_t httpfd_n = 0;
 	int maxfd;
 
-	const int nsecs = 1;
+	const int nsecs = 3;
 
 	fd_set rfds;
+	
+	struct timeval tv;
+
+	unsigned char data[DATA_SZ];
 
     if (setlocale(LC_CTYPE, config->locale) == NULL) {
         fprintf(stderr, "failed to set locale LC_CTYPE=\"%s\"\n", config->locale);
@@ -246,21 +252,72 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 		exit(EXIT_FAILURE);
 	}
 
-	FD_ZERO(&rfds);
-
-	FD_SET(dnsfd, &rfds);
-	maxfd = dnsfd;
-
-	for(size_t n = 0; n < httpfd_n; n++) {
-		FD_SET(httpfd[n], &rfds);
-		if(httpfd[n] > maxfd)
-			maxfd = httpfd[n];
-	}
-
 	while(!done) {
-		fprintf(fpout, "sleeping %d seconds...\n", nsecs);
-		sleep(nsecs);
-    }
+
+		FD_ZERO(&rfds);
+
+		FD_SET(dnsfd, &rfds);
+		maxfd = dnsfd;
+
+		for(size_t n = 0; n < httpfd_n; n++) {
+			FD_SET(httpfd[n], &rfds);
+			if(httpfd[n] > maxfd)
+				maxfd = httpfd[n];
+		}
+
+		tv.tv_sec = nsecs;
+		tv.tv_usec = 0;
+
+		int left = select(maxfd + 1, &rfds, NULL, NULL, &tv);
+
+		if(left == -1) {
+			perror("select()");
+			exit(EXIT_FAILURE);
+		}
+		
+		if(left == 0) {
+			fprintf(fpout, "%dsec timeout...\n", nsecs);
+			continue;
+		}
+
+		if(left > 0 && FD_ISSET(dnsfd, &rfds)) {
+
+			struct sockaddr_in sin_from;
+			socklen_t addrlen = sizeof(sin_from);
+
+			ssize_t sz = recvfrom(dnsfd, data, DATA_SZ, 0, (struct sockaddr *)&sin_from, &addrlen);
+			if(sz == -1) {
+				perror("recvfrom()");
+				exit(EXIT_FAILURE);
+			}
+
+			if(config->verbose) {
+
+				char ip_string[20];
+
+				if(inet_ntop(AF_INET, &sin_from.sin_addr, ip_string, sizeof(ip_string)) == NULL) {
+					perror("inet_ntop()");
+					exit(EXIT_FAILURE);
+				}
+
+
+				fprintf(fpout, "dnsfd data ready : read %ld bytes from %s:%d\n", (long)sz, ip_string, ntohs(sin_from.sin_port));
+			}
+
+			FD_CLR(dnsfd, &rfds);
+			left--;
+		}
+
+		for(size_t n = 0; n < httpfd_n; n++) {
+			if(left > 0 && FD_ISSET(httpfd[n], &rfds)) {
+
+				/* nothing yet */
+
+				FD_CLR(httpfd[n], &rfds);
+				left--;
+			}
+		}
+	}
 
 	fprintf(fpout, "cleaning up...\n");
 
