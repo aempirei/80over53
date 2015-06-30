@@ -135,6 +135,7 @@ sig_atomic_t done = 0;
 void sighandler(int signo) {
 	signal(signo, SIG_IGN);
 	done = 1;
+	fprintf(stderr, "caught signal %d...\n", signo);
 }
 
 #define HTTPFD_SZ 16
@@ -159,6 +160,21 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	if(setuid(0) == -1) {
 		perror("setuid()");
+		exit(EXIT_FAILURE);
+	}
+
+	if(signal(SIGQUIT, sighandler) == SIG_ERR) {
+		perror("signal()");
+		exit(EXIT_FAILURE);
+	}
+
+	if(signal(SIGTERM, sighandler) == SIG_ERR) {
+		perror("signal()");
+		exit(EXIT_FAILURE);
+	}
+
+	if(signal(SIGINT, sighandler) == SIG_ERR) {
+		perror("signal()");
 		exit(EXIT_FAILURE);
 	}
 
