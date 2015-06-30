@@ -67,18 +67,22 @@
  *
  */
 
+void eprintf(int, const char *, ...);
+
 typedef struct configuration {
 	int verbose;
     const char *locale;
 	uint32_t address;
 	uint16_t port;
+	FILE *fp;
 } configuration_t;
 
-const configuration_t default_config = {
+configuration_t default_config = {
 	.verbose = 0,
     .locale = "",
 	.address = INADDR_ANY,
-	.port = 53
+	.port = 53,
+	.fp = NULL
 };
 
 const char *default_action(int default_value) {
@@ -192,26 +196,63 @@ void sighandler(int signo) {
 #define HTTPFD_SZ 16
 #define DATA_SZ 2048
 
+ssize_t recvfrom_fd_data(configuration_t * config, int fd, void *data, size_t data_sz, struct sockaddr_in *sin) {
+
+
+	socklen_t addrlen;
+	ssize_t n;
+
+	addrlen = sizeof(*sin);
+
+	n = recvfrom(fd, data, data_sz, 0, (struct sockaddr *)sin, &addrlen);
+	if(n == -1)
+		return -1;
+
+	if(config->verbose) {
+
+		char buf[20];
+
+		if(inet_ntop(AF_INET, &(sin->sin_addr), buf, sizeof(buf)) == NULL) {
+			perror("inet_ntop()");
+			exit(EXIT_FAILURE);
+		}
+
+		fprintf(config->fp, "fd #%d data ready : read %ld bytes from %s:%d\n", fd, (long)n, buf, ntohs(sin->sin_port));
+	}
+
+	return n;
+}
+
+int int_array_shift(int *xs, size_t *xs_n) {
+
+	int x = *xs;
+
+	for(size_t n = 1; n < *xs_n; n++)
+		xs[n - 1] = xs[n];
+
+	(*xs_n)--;
+
+	return x;
+}
+
 void generate_http_request(void *data, ssize_t data_sz, int *httpfd, size_t *p_httpfd_n) {
 
 	if(data != NULL && data_sz > 0) {
 
 		if(*p_httpfd_n == HTTPFD_SZ) {
+
 			fprintf(stderr, "too many http connections open, closing oldest...");
-			close(httpfd[0]);
-			for(size_t n = 1; n < *p_httpfd_n; n++)
-				httpfd[n - 1] = httpfd[n];
-			(*p_httpfd_n)--;
+
+			close(int_array_shift(httpfd, p_httpfd_n));
 		}
 
-		if(0) {
-			httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
-			(*p_httpfd_n)++;
-		}
+		httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
+
+		(*p_httpfd_n)++;
 	}
 }
 
-void http_over_dns(configuration_t * config, FILE * fpout) {
+void http_over_dns(configuration_t * config) {
 
 	struct sockaddr_in sin;
 
@@ -236,18 +277,18 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	if(config->verbose) {
 
-		char ip_string[20];
+		char buf[20];
 
 		if(config->address == INADDR_ANY) {
-			strcpy(ip_string, "*");
-		} else if(inet_ntop(AF_INET, &config->address, ip_string, sizeof(ip_string)) == NULL) {
+			strcpy(buf, "*");
+		} else if(inet_ntop(AF_INET, &config->address, buf, sizeof(buf)) == NULL) {
 			perror("inet_ntop()");
 			exit(EXIT_FAILURE);
 		}
 
-		fprintf(fpout, "address: %s:%d\n", ip_string, config->port);
-		fprintf(fpout, "verbose: %s\n", config->verbose ? "true" : "false");
-		fprintf(fpout, " locale: \"%s\"\n", config->locale);
+		fprintf(config->fp, "address: %s:%d\n", buf, config->port);
+		fprintf(config->fp, "verbose: %s\n", config->verbose ? "true" : "false");
+		fprintf(config->fp, " locale: \"%s\"\n", config->locale);
 	}
 
 	if(setuid(0) == -1) {
@@ -288,6 +329,9 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	while(!done) {
 
+		struct sockaddr_in sin_from;
+		ssize_t sz;
+
 		FD_ZERO(&rfds);
 
 		FD_SET(dnsfd, &rfds);
@@ -310,56 +354,52 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 		}
 		
 		if(left == 0) {
-			fprintf(fpout, "%dsec timeout...\n", nsecs);
+			fprintf(config->fp, "%dsec timeout...\n", nsecs);
 			continue;
 		}
 
 		if(left > 0 && FD_ISSET(dnsfd, &rfds)) {
 
-			struct sockaddr_in sin_from;
-			socklen_t addrlen = sizeof(sin_from);
-
-			ssize_t sz = recvfrom(dnsfd, data, DATA_SZ, 0, (struct sockaddr *)&sin_from, &addrlen);
+			sz = recvfrom_fd_data(config, dnsfd, data, DATA_SZ, &sin_from);
 			if(sz == -1) {
-				perror("recvfrom()");
-				exit(EXIT_FAILURE);
-			}
-
-			if(config->verbose) {
-
-				char ip_string[20];
-
-				if(inet_ntop(AF_INET, &sin_from.sin_addr, ip_string, sizeof(ip_string)) == NULL) {
-					perror("inet_ntop()");
+				if(errno != EAGAIN) {
+					perror("recvfrom()");
 					exit(EXIT_FAILURE);
 				}
+			} else {
 
-				fprintf(fpout, "dns-fd data ready : read %ld bytes from %s:%d\n", (long)sz, ip_string, ntohs(sin_from.sin_port));
+				generate_http_request(data, sz, httpfd, &httpfd_n);
+
+				FD_CLR(dnsfd, &rfds);
+				left--;
 			}
-
-			generate_http_request(data, sz, httpfd, &httpfd_n);
-
-			FD_CLR(dnsfd, &rfds);
-			left--;
 		}
 
 		for(size_t n = 0; n < httpfd_n; n++) {
+
 			if(left > 0 && FD_ISSET(httpfd[n], &rfds)) {
 
-				/* nothing yet -- read data */
+				int fd = httpfd[n];
 
-				FD_CLR(httpfd[n], &rfds);
+				sz = recvfrom_fd_data(config, fd, data, DATA_SZ, &sin_from);
+
+				if(sz == -1 && errno != EAGAIN) {
+					eprintf(errno, "recvfrom() failed, removing http-fd #%d", fd);
+					close(int_array_shift(httpfd, &httpfd_n));
+				}
+
+				FD_CLR(fd, &rfds);
 				left--;
 			}
 		}
 
 		if(config->verbose)
-			fprintf(fpout, "%ld http-fds\n", httpfd_n);
+			fprintf(config->fp, "%ld http-fds\n", httpfd_n);
 	}
 
-	fprintf(fpout, "cleaning up...\n");
+	fprintf(config->fp, "cleaning up...\n");
 
-	fclose(fpout);
+	fclose(config->fp);
 
 	if(dnsfd != -1) {
 		close(dnsfd);
@@ -371,7 +411,7 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 
 	httpfd_n = 0;
 
-	fprintf(fpout, "goodbye!\n");
+	fprintf(config->fp, "goodbye!\n");
 
 }
 
@@ -397,6 +437,8 @@ int main(int argc, char **argv) {
 
 	configuration_t config;
 
+	default_config.fp = stdout;
+
 	int lastopt = cliconfig(&config, argc, argv);
 
 	if (lastopt != argc) {
@@ -404,7 +446,7 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
-	http_over_dns(&config, stdout);
+	http_over_dns(&config);
 
 	exit(EXIT_SUCCESS);
 }
