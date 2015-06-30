@@ -126,44 +126,59 @@ int cliconfig(configuration_t * config, int argc, char **argv) {
 	struct in_addr addr;
 	unsigned long port;
 
-    while ((opt = getopt(argc, argv, "hv4:p:l:")) != -1) {
-        switch (opt) {
-        case 'v':
-            config->verbose = !default_config.verbose;
-            break;
-		case '4':
-			if(inet_pton(AF_INET, optarg, &addr) == -1) {
-				perror("inet_pton()");
-				exit(EXIT_FAILURE);
-			}
-			config->address = addr.s_addr;
-            break;
-		case 'p':
-			port = strtoul(optarg, NULL, 0);
-			if(port == ULONG_MAX && errno == ERANGE) {
-				perror("strtoul()");
-				exit(EXIT_FAILURE);
-			}
-			config->port = port;
-            break;
-        case 'l':
-            config->locale = optarg;
-            break;
-        case 'h':
-            usage(argv[0]);
-            exit(EXIT_SUCCESS);
-        case '?':
-            fprintf(stderr, "unknown option: -%c\n", optopt);
-            usage(argv[0]);
-            exit(EXIT_FAILURE);
-        default:
-            fprintf(stderr, "unimplemented option: -%c\n", opt);
-            usage(argv[0]);
-            exit(EXIT_FAILURE);
-        }
-    }
+	while ((opt = getopt(argc, argv, "hv4:p:l:")) != -1) {
 
-    return optind;
+		switch (opt) {
+
+			case 'v':
+
+				config->verbose = !default_config.verbose;
+				break;
+
+			case '4':
+
+				if(inet_pton(AF_INET, optarg, &addr) == -1) {
+					perror("inet_pton()");
+					exit(EXIT_FAILURE);
+				}
+				config->address = addr.s_addr;
+				break;
+
+			case 'p':
+
+				port = strtoul(optarg, NULL, 0);
+				if(port == ULONG_MAX && errno == ERANGE) {
+					perror("strtoul()");
+					exit(EXIT_FAILURE);
+				}
+				config->port = port;
+				break;
+
+			case 'l':
+
+				config->locale = optarg;
+				break;
+
+			case 'h':
+
+				usage(argv[0]);
+				exit(EXIT_SUCCESS);
+
+			case '?':
+
+				fprintf(stderr, "unknown option: -%c\n", optopt);
+				usage(argv[0]);
+				exit(EXIT_FAILURE);
+
+			default:
+
+				fprintf(stderr, "unimplemented option: -%c\n", opt);
+				usage(argv[0]);
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	return optind;
 }
 
 sig_atomic_t done = 0;
@@ -171,11 +186,28 @@ sig_atomic_t done = 0;
 void sighandler(int signo) {
 	signal(signo, SIG_IGN);
 	done = 1;
-	fprintf(stderr, "caught signal %d...\n", signo);
+	fprintf(stderr, "caught signal #%d...\n", signo);
 }
 
 #define HTTPFD_SZ 16
 #define DATA_SZ 2048
+
+void generate_http_request(void *data, ssize_t data_sz, int *httpfd, size_t *p_httpfd_n) {
+
+	if(data != NULL && data_sz > 0) {
+
+		if(*p_httpfd_n == HTTPFD_SZ) {
+			fprintf(stderr, "too many http connections open, closing oldest...");
+			close(httpfd[0]);
+			for(size_t n = 1; n < *p_httpfd_n; n++)
+				httpfd[n - 1] = httpfd[n];
+			(*p_httpfd_n)--;
+		}
+
+		httpfd[*p_httpfd_n] = socket(AF_INET, SOCK_STREAM, 0);
+		(*p_httpfd_n)++;
+	}
+}
 
 void http_over_dns(configuration_t * config, FILE * fpout) {
 
@@ -190,15 +222,15 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 	const int nsecs = 3;
 
 	fd_set rfds;
-	
+
 	struct timeval tv;
 
 	unsigned char data[DATA_SZ];
 
-    if (setlocale(LC_CTYPE, config->locale) == NULL) {
-        fprintf(stderr, "failed to set locale LC_CTYPE=\"%s\"\n", config->locale);
-        exit(EXIT_FAILURE);
-    }
+	if (setlocale(LC_CTYPE, config->locale) == NULL) {
+		fprintf(stderr, "failed to set locale LC_CTYPE=\"%s\"\n", config->locale);
+		exit(EXIT_FAILURE);
+	}
 
 	if(config->verbose) {
 
@@ -300,9 +332,10 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 					exit(EXIT_FAILURE);
 				}
 
-
 				fprintf(fpout, "dnsfd data ready : read %ld bytes from %s:%d\n", (long)sz, ip_string, ntohs(sin_from.sin_port));
 			}
+
+			generate_http_request(data, sz, httpfd, &httpfd_n);
 
 			FD_CLR(dnsfd, &rfds);
 			left--;
@@ -311,7 +344,7 @@ void http_over_dns(configuration_t * config, FILE * fpout) {
 		for(size_t n = 0; n < httpfd_n; n++) {
 			if(left > 0 && FD_ISSET(httpfd[n], &rfds)) {
 
-				/* nothing yet */
+				/* nothing yet -- read data */
 
 				FD_CLR(httpfd[n], &rfds);
 				left--;
