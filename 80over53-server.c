@@ -105,7 +105,7 @@ struct dns_header {
 } __attribute__ ((__packed__));
 
 ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label);
-ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name, size_t name_sz);
+ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name);
 
 size_t get_label_sz(size_t offset, const void *data);
 size_t get_pointer_offset(size_t offset, const void *data);
@@ -113,7 +113,7 @@ size_t get_pointer_offset(size_t offset, const void *data);
 int is_label(size_t offset, const void *data);
 int is_pointer(size_t offset, const void *data);
 
-ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name, size_t name_sz) {
+ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name) {
  
 	/*
 	 * FIXME: improve the memory management of the dns name block
