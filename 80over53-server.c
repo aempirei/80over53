@@ -106,6 +106,26 @@ struct dns_header {
 
 ssize_t expand_label(size_t offset, void *data, size_t data_sz, char *label, size_t label_sz);
 ssize_t expand_name(size_t offset, void *data, size_t data_sz, char *name, size_t name_sz);
+size_t get_label_length(size_t offset, const void *data);
+size_t get_pointer_offset(size_t offset, const void *data);
+int is_pointer(size_t offset, const void *data);
+
+size_t get_label_length(size_t offset, const void *data) {
+	return *(const uint8_t *)data & 0x3f;
+}
+
+size_t get_pointer_offset(size_t offset, const void *data) {
+	const uint8_t *p = (const uint8_t *)data;
+	return ( 256 * p[0] + p[1] ) & 0x3fff;
+}
+
+int is_label(size_t offset, const void *data) {
+	return ( *(const uint8_t *)data & 0xc0 ) == 0x00;
+}
+
+int is_pointer(size_t offset, const void *data) {
+	return ( *(const uint8_t *)data & 0xc0 ) == 0xc0;
+}
 
 const char *default_action(int default_value) {
     return default_value ? "disable" : "enable";
