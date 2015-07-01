@@ -104,7 +104,7 @@ struct dns_header {
 
 } __attribute__ ((__packed__));
 
-ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label, size_t *label_sz);
+ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label);
 ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name, size_t name_sz);
 
 size_t get_label_sz(size_t offset, const void *data);
@@ -113,22 +113,41 @@ size_t get_pointer_offset(size_t offset, const void *data);
 int is_label(size_t offset, const void *data);
 int is_pointer(size_t offset, const void *data);
 
-ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label, size_t *label_sz) {
+ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name, size_t name_sz) {
+
+	ssize_t label_sz;
+
+	size_t used = 0;
+
+	do {
+
+		label_sz = expand_label(offset + used, data, data_sz, name + used);
+
+		name[used + label_sz] = label_sz == 0 ? '\0' : '.';
+
+		used += label_sz + 1;
+
+	} while(label_sz > 0 && offset + used < data_sz);
+
+	return used - 1;
+}
+
+ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label) {
 
 	if(is_label(offset, data)) {
 
-		*label_sz = get_label_sz(offset, data);
+		ssize_t label_sz = get_label_sz(offset, data);
 		const char *label_offset = (const char *)data + offset + 1;
 
-		memcpy(label, (const void *)label_offset, *label_sz);
+		memcpy(label, (const void *)label_offset, label_sz);
 
-		return offset + 1 + *label_sz;
+		return label_sz;
 
 	} else if(is_pointer(offset, data)) {
 
 		size_t pointer_offset = get_pointer_offset(offset, data);
 
-		return expand_label(pointer_offset, data, data_sz, label, label_sz);
+		return expand_label(pointer_offset, data, data_sz, label);
 
 	} else {
 
