@@ -34,6 +34,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <80over53/dns.hh>
+
 /*
  * 80over53-server program logic
  * =============================
@@ -98,79 +100,6 @@ struct configuration {
 };
 
 configuration default_config = configuration();
-
-enum struct dns_type : uint16_t {
-	A = 1, AAAA = 28, AFSDB = 18, APL = 42, CAA = 257, CDNSKEY = 60, CDS = 59, CERT = 37, CNAME = 5, DHCID = 49, DLV = 32769,
-	DNAME = 39, DNSKEY = 48, DS = 43, HIP = 55, IPSECKEY = 45, KEY = 25, LOC = 29, MX = 15, NAPTR = 35, NS = 2, NSEC = 47,
-	NSEC3 = 50, NSEC3PARAM = 51, PTR = 12, RRSIG = 46, RP = 17, SIG = 24, SOA = 6, SRV = 33, SSHFP = 44, TA = 32768, TKEY = 249,
-	TLSA = 52, TSIG = 250, TXT = 16
-};
-
-enum struct dns_class : uint16_t {
-	IN = 1,
-	CH = 3,
-	HS = 4,
-	NONE = 254,
-	ANY = 255
-};
-
-struct dns_question {
-	char qname[DNS_NAME_MAX_SZ + 1] = "";
-	dns_type qtype;
-	dns_class qclass;
-
-	dns_question() : qtype(dns_type::A), qclass(dns_class::IN);
-};
-
-struct dns_header {
-
-	uint16_t id;
-
-	uint8_t qr:1,
-			 opcode:4,
-			 aa:1,
-			 tc:1,
-			 rd:1;
-
-	uint8_t	 ra:1,
-			 z:3,
-			 rcode:4;
-
-	uint16_t qdcount;
-	uint16_t ancount;
-	uint16_t nscount;
-	uint16_t arcount;
-
-	dns_header() : id(0), qr(0), opcode(0), aa(0), tc(0), rd(0), ra(0), z(0), rcode(0), qdcount(0), ancount(0), nscount(0), arcount(0)
-	{
-	}
-
-	int sprint(char *s, size_t sz) {
-		return snprintf(s, sz, "id=%d %s %s%s%s%s%s z=%d %s QD(%d) AN(%d) NS(%d) AR(%d)",
-				ntohs(id),
-				qr == 0 ? "QUERY" : "RESPONSE",
-				opcode == 0 ? "QUERY" :
-				opcode == 1 ? "IQUERY" :
-				opcode == 2 ? "STATUS" :
-				"RESERVED",
-				aa ? " AUTHORITATIVE" : "",
-				tc ? " TRUNCATED" :  "",
-				rd ? " RD" : "",
-				ra ? " RA" : "",
-				z,
-				rcode == 0 ? "OK" :
-				rcode == 1 ? "FORMAT ERROR" :
-				rcode == 2 ? "SERVER FAILURE" :
-				rcode == 3 ? "NAME ERROR" :
-				rcode == 4 ? "NOT IMPLEMENTED" :
-				rcode == 5 ? "REFUSED" :
-				"RESERVED",
-				ntohs(qdcount),
-				ntohs(ancount),
-				ntohs(nscount),
-				ntohs(arcount));
-	}
-} __attribute__ ((__packed__));
 
 ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label);
 ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name);

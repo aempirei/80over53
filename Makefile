@@ -8,19 +8,18 @@ INSTALL_PATH = /usr/local/bin
 
 .PHONY: all install clean
 
-all: $(PROGRAMS)
+all: bin $(PROGRAMS)
 
 bin:
 	mkdir bin
 
-bin/80over53-server: bin src/80over53-server.o
-	$(CC) $(CCFLAGS) -o $@ $^ $(LIBFLAGS)
+bin/80over53-server: src/server.o 80over53/dns.o
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBFLAGS)
 
 install: $(PROGRAMS)
 	install $(PROGRAMS) -m755 $(INSTALL_PATH)
 
 clean:
-	rm -f $(PROGRAMS)
-	rm -f *.o
+	rm -rf bin
+	rm -f src/*.o
 	rm -f *~
-	rmdir bin
