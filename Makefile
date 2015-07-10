@@ -1,16 +1,19 @@
 CXX = g++
-CPPFLAGS = -I. -Wall
-CXXFLAGS = -Wall -I. -pedantic -std=gnu++11 -O2 -Wno-unused-variable
+CPPFLAGS = -Isrc. -Wall
+CXXFLAGS = -Wall -Isrc -pedantic -std=gnu++11 -O2 -Wno-unused-variable
 LIBFLAGS =
 # -Llib -l80over53
-PROGRAMS = 80over53-server
+PROGRAMS = bin/80over53-server
 INSTALL_PATH = /usr/local/bin
 
 .PHONY: all install clean
 
 all: $(PROGRAMS)
 
-80over53-server: 80over53-server.o
+bin:
+	mkdir bin
+
+bin/80over53-server: bin src/80over53-server.o
 	$(CC) $(CCFLAGS) -o $@ $^ $(LIBFLAGS)
 
 install: $(PROGRAMS)
@@ -20,3 +23,4 @@ clean:
 	rm -f $(PROGRAMS)
 	rm -f *.o
 	rm -f *~
+	rmdir bin

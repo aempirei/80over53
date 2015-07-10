@@ -99,6 +99,29 @@ struct configuration {
 
 configuration default_config = configuration();
 
+enum struct dns_type : uint16_t {
+	A = 1, AAAA = 28, AFSDB = 18, APL = 42, CAA = 257, CDNSKEY = 60, CDS = 59, CERT = 37, CNAME = 5, DHCID = 49, DLV = 32769,
+	DNAME = 39, DNSKEY = 48, DS = 43, HIP = 55, IPSECKEY = 45, KEY = 25, LOC = 29, MX = 15, NAPTR = 35, NS = 2, NSEC = 47,
+	NSEC3 = 50, NSEC3PARAM = 51, PTR = 12, RRSIG = 46, RP = 17, SIG = 24, SOA = 6, SRV = 33, SSHFP = 44, TA = 32768, TKEY = 249,
+	TLSA = 52, TSIG = 250, TXT = 16
+};
+
+enum struct dns_class : uint16_t {
+	IN = 1,
+	CH = 3,
+	HS = 4,
+	NONE = 254,
+	ANY = 255
+};
+
+struct dns_question {
+	char qname[DNS_NAME_MAX_SZ + 1] = "";
+	dns_type qtype;
+	dns_class qclass;
+
+	dns_question() : qtype(dns_type::A), qclass(dns_class::IN);
+};
+
 struct dns_header {
 
 	uint16_t id;
@@ -159,8 +182,6 @@ int is_label(size_t offset, const void *data);
 int is_pointer(size_t offset, const void *data);
 
 ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name) {
- 
-	/* TODO: improve the memory management of the dns name block */
 
 	ssize_t label_sz;
 
@@ -395,7 +416,7 @@ int int_array_shift(int *xs, size_t *xs_n) {
 	return int_array_delete(xs, xs_n, 0);
 }
 
-enum struct http_method { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
+enum struct http_method : unsigned { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
 
 void generate_http_request(configuration *config, void *data, ssize_t data_sz, int *httpfd, size_t *p_httpfd_n) {
 
