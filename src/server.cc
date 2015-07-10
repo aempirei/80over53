@@ -469,8 +469,11 @@ void http_over_dns(configuration * config) {
 		if(left > 0 && FD_ISSET(dnsfd, &rfds)) {
 
 			sz = recvfrom_fd_data(config, dnsfd, data, DATA_SZ, &sin_from);
+
 			if(sz == -1) {
+
 				if(errno != EAGAIN) {
+
 					perror("recvfrom()");
 					exit(EXIT_FAILURE);
 				}
