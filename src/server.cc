@@ -87,77 +87,6 @@ struct configuration {
 
 configuration default_config = configuration();
 
-ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label);
-ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name);
-
-size_t get_label_sz(size_t offset, const void *data);
-size_t get_pointer_offset(size_t offset, const void *data);
-
-int is_label(size_t offset, const void *data);
-int is_pointer(size_t offset, const void *data);
-
-ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name) {
-
-	ssize_t label_sz;
-
-	size_t used = 0;
-
-	do {
-
-		label_sz = expand_label(offset + used, data, data_sz, name + used);
-
-		if(label_sz == -1)
-			return -1;
-
-		used += label_sz;
-
-		name[used++] = (label_sz == 0) ? '\0' : '.';
-
-	} while(label_sz > 0 && offset + used < data_sz);
-
-	return used - 1;
-}
-
-ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label) {
-
-	if(is_label(offset, data)) {
-
-		ssize_t label_sz = get_label_sz(offset, data);
-		const char *label_offset = (const char *)data + offset + 1;
-
-		memcpy(label, (const void *)label_offset, label_sz);
-
-		return label_sz;
-
-	} else if(is_pointer(offset, data)) {
-
-		size_t pointer_offset = get_pointer_offset(offset, data);
-
-		return expand_label(pointer_offset, data, data_sz, label);
-
-	} else {
-
-		return -1;
-	}
-}
-
-size_t get_label_sz(size_t offset, const void *data) {
-	return *(const uint8_t *)data & 0x3f;
-}
-
-size_t get_pointer_offset(size_t offset, const void *data) {
-	const uint8_t *p = (const uint8_t *)data;
-	return ( (size_t)256 * p[0] + p[1] ) & (size_t)0x3fff;
-}
-
-int is_label(size_t offset, const void *data) {
-	return ( *(const uint8_t *)data & 0xc0 ) == 0x00;
-}
-
-int is_pointer(size_t offset, const void *data) {
-	return ( *(const uint8_t *)data & 0xc0 ) == 0xc0;
-}
-
 const char *default_action(int default_value) {
     return default_value ? "disable" : "enable";
 }
@@ -366,7 +295,7 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 		dns_question question;
 		char question_string[DNS_NAME_MAX_SZ * 2];
 
-		ssize_t n = question.parse((uint8_t *)data + done, left);
+		ssize_t n = question.parse(done, (uint8_t *)data, data_sz);
 
 		left -= n;
 		done += n;

@@ -67,7 +67,7 @@ struct dns_question {
 	dns_type qtype = dns_type::A;
 	dns_class qclass = dns_class::IN;
 
-	ssize_t parse(const void *, size_t);
+	ssize_t parse(size_t, const void *, size_t);
 
 	int sprint(char *, size_t);
 };
@@ -100,3 +100,12 @@ const char *dns_type_str(dns_type);
 const char *dns_class_str(dns_class);
 
 #pragma pack(pop)
+
+ssize_t expand_label(size_t, const void *, size_t, char *);
+ssize_t expand_name(size_t, const void *, size_t, char *);
+
+size_t get_label_sz(size_t, const void *);
+size_t get_pointer_offset(size_t, const void *);
+
+int is_label(size_t, const void *);
+int is_pointer(size_t, const void *);
