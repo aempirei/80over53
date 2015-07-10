@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <cstdarg>
 #include <cstdint>
-// #include <stdatomic.h>
 
 #include <cstring>
 #include <cerrno>
@@ -33,6 +32,8 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+
+#include <set>
 
 #include <80over53/dns.hh>
 
@@ -75,14 +76,11 @@
 void eprintf(int, const char *, ...);
 
 struct configuration {
-	int verbose;
-    const char *locale;
-	uint32_t address;
-	uint16_t port;
-	FILE *fp;
-
-	configuration() : verbose(0), locale(""), address(INADDR_ANY), port(53), fp(stdout) {
-	}
+	bool verbose = false;
+    const char *locale = "";
+	uint32_t address = INADDR_ANY;
+	uint16_t port = 53;
+	FILE *fp = stdout;
 };
 
 configuration default_config = configuration();
@@ -211,7 +209,6 @@ void sighandler_reload(int signo) {
 	fprintf(stderr, "caught signal #%d (%s), reloading configuration...\n", signo, strsignal(signo));
 }
 
-#define HTTPFD_SZ 16
 #define DATA_SZ 2048
 
 ssize_t recvfrom_fd_data(configuration * config, int fd, void *data, size_t data_sz, struct sockaddr_in *p_sin) {
@@ -262,14 +259,13 @@ int int_array_shift(int *xs, size_t *xs_n) {
 
 enum struct http_method : unsigned { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
 
-void generate_http_request(configuration *config, void *data, ssize_t data_sz, int *httpfd, size_t *p_httpfd_n) {
+void generate_http_request(configuration *config, void *data, ssize_t data_sz, std::set<int>& httpfdset) {
 
 	constexpr uint16_t http_port = 80;
 	constexpr http_method method = http_method::GET;
 
 	struct sockaddr_in sin_to;
 
-	int fd;
 	size_t content_length;
 
 	char content[8192];
@@ -278,6 +274,8 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 
 	ssize_t offset;
 	ssize_t n;
+
+	int fd;
 
 	dns_header header;
 
@@ -322,27 +320,29 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 		exit(EXIT_FAILURE);
 	}
 
-	fd = socket(AF_INET, SOCK_STREAM, 0);
+	while(httpfdset.size() >= FD_SETSIZE) {
 
-	if(*p_httpfd_n == HTTPFD_SZ) {
+		fd = *httpfdset.begin();
 
-		fprintf(stderr, "too many http connections open, closing oldest...");
+		fprintf(stderr, "too many http connections open, closing fd #%d...", fd);
 
-		close(int_array_shift(httpfd, p_httpfd_n));
+		close(fd);
+
+		httpfdset.erase(fd);
 	}
 
-	httpfd[*p_httpfd_n] = fd;
+	// FIXME: this should really be SOCK_STREAM and then a connect() to the destination HTTP server
 
-	(*p_httpfd_n)++;
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	httpfdset.insert(fd);
 }
 
 void http_over_dns(configuration * config) {
 
 	struct sockaddr_in sin;
 
-	size_t httpfd_n = 0;
+	std::set<int> httpfdset;
 
-	int httpfd[HTTPFD_SZ];
 	int dnsfd = -1;
 	int maxfd;
 
@@ -381,8 +381,10 @@ void http_over_dns(configuration * config) {
 	}
 
 	auto configure_signal = [config](int signo, sighandler_t handler) {
+
 		if(config->verbose) 
 			fprintf(config->fp, "configuring signal #%d (%s)\n", signo, strsignal(signo));
+
 		if(signal(signo, handler) == SIG_ERR) {
 			perror("signal()");
 			exit(EXIT_FAILURE);
@@ -432,14 +434,21 @@ void http_over_dns(configuration * config) {
 		FD_SET(dnsfd, &rfds);
 		maxfd = dnsfd;
 
-		for(size_t n = 0; n < httpfd_n; n++) {
-			FD_SET(httpfd[n], &rfds);
-			if(httpfd[n] > maxfd)
-				maxfd = httpfd[n];
+		for(int fd : httpfdset) {
+			FD_SET(fd, &rfds);
+			if(fd > maxfd)
+				maxfd = fd;
 		}
 
 		tv.tv_sec = nsecs;
 		tv.tv_usec = 0;
+
+		if(config->verbose) {
+			fprintf(config->fp, "waiting %ds for any files ready for reading (%d/%d descriptors)\n",
+					nsecs,
+					(int)httpfdset.size() + 1,
+					(int)FD_SETSIZE + 1);
+		}
 
 		int left = select(maxfd + 1, &rfds, NULL, NULL, &tv);
 
@@ -467,44 +476,48 @@ void http_over_dns(configuration * config) {
 				}
 			} else {
 
-				generate_http_request(config, data, sz, httpfd, &httpfd_n);
+				generate_http_request(config, data, sz, httpfdset);
 
 				FD_CLR(dnsfd, &rfds);
 				left--;
 			}
 		}
 
-		for(size_t n = 0; n < httpfd_n; n++) {
+		for(int fd : httpfdset) {
 
-			if(left > 0 && FD_ISSET(httpfd[n], &rfds)) {
-
-				int fd = httpfd[n];
+			if(left > 0 && FD_ISSET(fd, &rfds)) {
 
 				sz = recvfrom_fd_data(config, fd, data, DATA_SZ, &sin_from);
 
 				if(sz == -1) {
 
 					if(errno != EAGAIN) {
+
 						eprintf(errno, "recvfrom() failed, removing http-fd #%d", fd);
-						close(int_array_delete(httpfd, &httpfd_n, n));
+
+						close(fd);
+						httpfdset.erase(fd);
 					}
 
 				} else if(sz == 0) {
 
 					if(config->verbose)
 						fprintf(config->fp, "http connection closed, removing http-fd #%d", fd);
-					close(int_array_delete(httpfd, &httpfd_n, n));
+
+					close(fd);
+					httpfdset.erase(fd);
 
 				} else {
+
+					//
+					// process the data
+					//
 				}
 
 				FD_CLR(fd, &rfds);
 				left--;
 			}
 		}
-
-		if(config->verbose)
-			fprintf(config->fp, "%ld http-fds\n", httpfd_n);
 	}
 
 	fprintf(config->fp, "cleaning up...\n");
@@ -514,10 +527,10 @@ void http_over_dns(configuration * config) {
 		dnsfd = -1;
 	}
 
-	for(size_t n = 0; n < httpfd_n; n++)
-		close(httpfd_n);
+	for(int fd : httpfdset)
+		close(fd);
 
-	httpfd_n = 0;
+	httpfdset.clear();
 
 	fprintf(config->fp, "goodbye!\n");
 
