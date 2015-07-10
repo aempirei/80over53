@@ -66,6 +66,10 @@ struct dns_question {
 	char qname[DNS_NAME_MAX_SZ + 1] = "";
 	dns_type qtype = dns_type::A;
 	dns_class qclass = dns_class::IN;
+
+	ssize_t parse(const void *, size_t);
+
+	int sprint(char *, size_t);
 };
 
 #pragma pack(push, 1)
@@ -91,5 +95,8 @@ struct dns_header {
 
 	int sprint(char *, size_t);
 };
+
+const char *dns_type_str(dns_type);
+const char *dns_class_str(dns_class);
 
 #pragma pack(pop)

@@ -361,6 +361,20 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 		done += sizeof(dns_header);
 	}
 
+	for(size_t q_n = 1; q_n <= header.qdcount; q_n++) {
+
+		dns_question question;
+		char question_string[DNS_NAME_MAX_SZ * 2];
+
+		ssize_t n = question.parse((uint8_t *)data + done, left);
+
+		left -= n;
+		done += n;
+
+		question.sprint(question_string, sizeof(question_string));
+		fprintf(config->fp, "dns question #%d :: %s\n", (int)n, question_string);
+	}
+
 	if(config->verbose) {
 		char header_string[256];
 		header.sprint(header_string, sizeof(header_string));
