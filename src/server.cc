@@ -276,18 +276,23 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 	char abs_path[2048];
 	char ip_string[20];
 
-	ssize_t left;
-	ssize_t done;
+	ssize_t offset;
+	ssize_t n;
 
 	dns_header header;
 
-	left = data_sz;
-	done = 0;
+	n = header.parse(data, data_sz);
+	if(n == -1) {
+		fprintf(stderr, "dns header parse failed...\n");
+		return;
+	}
 
-	if((signed)sizeof(dns_header) <= left) {
-		memcpy(&header, (uint8_t *)data + done, sizeof(dns_header));
-		left -= sizeof(dns_header);
-		done += sizeof(dns_header);
+	offset = n;
+
+	if(config->verbose) {
+		char header_string[256];
+		header.sprint(header_string, sizeof(header_string));
+		fprintf(config->fp, "dns header :: %s\n", header_string);
 	}
 
 	for(size_t q_n = 1; q_n <= header.qdcount; q_n++) {
@@ -295,19 +300,18 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, i
 		dns_question question;
 		char question_string[DNS_NAME_MAX_SZ * 2];
 
-		ssize_t n = question.parse(done, (uint8_t *)data, data_sz);
+		n = question.parse(offset, data, data_sz);
+		if(n == -1) {
+			fprintf(stderr, "dns question #%d parse failed...\n", (int)q_n);
+			return;
+		}
 
-		left -= n;
-		done += n;
+		offset = n;
 
-		question.sprint(question_string, sizeof(question_string));
-		fprintf(config->fp, "dns question #%d :: %s\n", (int)n, question_string);
-	}
-
-	if(config->verbose) {
-		char header_string[256];
-		header.sprint(header_string, sizeof(header_string));
-		fprintf(config->fp, "dns header :: %s\n", header_string);
+		if(config->verbose) {
+			question.sprint(question_string, sizeof(question_string));
+			fprintf(config->fp, "dns question #%d :: %s\n", (int)q_n, question_string);
+		}
 	}
 
 	memset(&sin_to, 0, sizeof(sin_to));

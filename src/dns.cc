@@ -4,6 +4,8 @@
 
 #include <80over53/dns.hh>
 
+#define dfprintf(...)
+
 const char *dns_type_str(dns_type x) {
 	switch(x) {
 
@@ -61,18 +63,48 @@ const char *dns_class_str(dns_class x) {
 	}
 }
 
+ssize_t dns_header::parse(const void *data, size_t data_sz) {
+
+	if(data_sz < sizeof(dns_header))
+		return -1;
+
+	memcpy(this, data, sizeof(dns_header));
+
+	id = ntohs(id);
+	qdcount = ntohs(qdcount);
+	ancount = ntohs(ancount);
+	nscount = ntohs(nscount);
+	arcount = ntohs(arcount);
+
+	return sizeof(dns_header);
+}
+
 ssize_t dns_question::parse(size_t offset, const void *data, size_t data_sz) {
-	ssize_t n = expand_name(offset, data, data_sz, qname);
-	return -1;
+
+	ssize_t n = expand_name(offset, data, data_sz, qname, &qname_sz);
+	if(n == -1)
+		return -1;
+
+	uint16_t *u16s = (uint16_t *)((uint8_t *)data + n);
+
+	qtype = (dns_type)ntohs(u16s[0]);
+	qclass = (dns_class)ntohs(u16s[1]);
+
+	return n + 4;
 }
 
 int dns_question::sprint(char *s, size_t sz) {
-	return snprintf(s, sz, "%s %s %s", dns_type_str(qtype), dns_class_str(qclass), qname);
+	return snprintf(s, sz, "%s %s (%d) \"%.*s\"",
+	dns_type_str(qtype),
+	dns_class_str(qclass),
+	(int)qname_sz,
+	(int)qname_sz,
+	qname);
 }
 
 int dns_header::sprint(char *s, size_t sz) {
 	return snprintf(s, sz, "id=%d %s %s%s%s%s%s z=%d %s QD(%d) AN(%d) NS(%d) AR(%d)",
-			ntohs(id),
+			id,
 			qr == 0 ? "QUERY" : "RESPONSE",
 			opcode == 0 ? "QUERY" : opcode == 1 ? "IQUERY" : opcode == 2 ? "STATUS" : "RESERVED",
 			aa ? " AUTHORITATIVE" : "",
@@ -86,51 +118,70 @@ int dns_header::sprint(char *s, size_t sz) {
 			rcode == 3 ? "NAME ERROR" :
 			rcode == 4 ? "NOT IMPLEMENTED" :
 			rcode == 5 ? "REFUSED" : "RESERVED",
-			ntohs(qdcount),
-			ntohs(ancount),
-			ntohs(nscount),
-			ntohs(arcount));
+			qdcount,
+			ancount,
+			nscount,
+			arcount);
 }
 
-ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name) {
+ssize_t expand_name(size_t offset, const void *data, size_t data_sz, char *name, size_t *name_sz) {
 
-	ssize_t label_sz;
+	ssize_t n;
 
-	size_t used = 0;
+	char *tail = name;
+
+	*name_sz = 0;
 
 	do {
 
-		label_sz = expand_label(offset + used, data, data_sz, name + used);
+		size_t label_sz;
 
-		if(label_sz == -1)
+		n = expand_label(offset, data, data_sz, tail, &label_sz);
+		if(n == -1)
 			return -1;
 
-		used += label_sz;
+		offset += n;
 
-		name[used++] = (label_sz == 0) ? '\0' : '.';
+		*name_sz += label_sz;
 
-	} while(label_sz > 0 && offset + used < data_sz);
+		tail += label_sz;
+		
+		*tail++ = label_sz ? '.' : '\0';
 
-	return used - 1;
+		if(label_sz)
+			(*name_sz)++;
+
+	} while(n != 1 && offset < data_sz);
+
+	return offset;
 }
 
 
-ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label) {
+ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *label, size_t *label_sz) {
+
+	dfprintf(stderr, "expanding label @ %d\n", (int)offset);
 
 	if(is_label(offset, data)) {
 
-		ssize_t label_sz = get_label_sz(offset, data);
-		const char *label_offset = (const char *)data + offset + 1;
+		*label_sz = get_label_sz(offset, data);
+		const char *label_ptr = (const char *)data + offset + 1;
 
-		memcpy(label, (const void *)label_offset, label_sz);
+		dfprintf(stderr, "copy label @ %d (%d) \"%.*s\"\n", (int)offset, (int)*label_sz, (int)*label_sz, label_ptr);
 
-		return label_sz;
+		memcpy(label, label_ptr, *label_sz);
+
+		return (ssize_t)*label_sz + 1;
 
 	} else if(is_pointer(offset, data)) {
 
-		size_t pointer_offset = get_pointer_offset(offset, data);
+		const size_t pointer_offset = get_pointer_offset(offset, data);
 
-		return expand_label(pointer_offset, data, data_sz, label);
+		dfprintf(stderr, "follow pointer @ %d -> %d\n", (int)offset, (int)pointer_offset);
+
+		if(expand_label(pointer_offset, data, data_sz, label, label_sz) == -1)
+			return -1;
+
+		return 2;
 
 	} else {
 
@@ -139,17 +190,20 @@ ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *labe
 }
 
 size_t get_label_sz(size_t offset, const void *data) {
-	return *(const uint8_t *)data & 0x3f;
+	const uint8_t *p = (const uint8_t *)data + offset;
+	return *p & 0x3f;
 }
 
 size_t get_pointer_offset(size_t offset, const void *data) {
-	const uint8_t *p = (const uint8_t *)data;
+	const uint8_t *p = (const uint8_t *)data + offset;
 	return ( (size_t)256 * p[0] + p[1] ) & (size_t)0x3fff;
 }
-int is_label(size_t offset, const void *data) {
-	return ( *(const uint8_t *)data & 0xc0 ) == 0x00;
+bool is_label(size_t offset, const void *data) {
+	const uint8_t *p = (const uint8_t *)data + offset;
+	return ( *p & 0xc0 ) == 0x00;
 }
 
-int is_pointer(size_t offset, const void *data) {
-	return ( *(const uint8_t *)data & 0xc0 ) == 0xc0;
+bool is_pointer(size_t offset, const void *data) {
+	const uint8_t *p = (const uint8_t *)data;
+	return ( *p & 0xc0 ) == 0xc0;
 }
