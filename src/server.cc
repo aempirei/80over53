@@ -72,20 +72,6 @@
  *
  */
 
-/*
- * DNS size limits (in octets)
- *
- * labels       < 64   (6 bits)
- * names        < 256  (8 bits)
- * TTL          < 2^31 (31 bits)
- * UDP messages <= 512 (9 bits)
- *
- */
-
-#define DNS_LABEL_MAX_SZ ((1<<6)-1)
-#define DNS_NAME_MAX_SZ  ((1<<8)-1)
-#define DNS_TTL_MAX_SZ   ((1<<31)-1)
-
 void eprintf(int, const char *, ...);
 
 struct configuration {

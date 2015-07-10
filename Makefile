@@ -13,7 +13,7 @@ all: bin $(PROGRAMS)
 bin:
 	mkdir bin
 
-bin/80over53-server: src/server.o 80over53/dns.o
+bin/80over53-server: src/server.o src/dns.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBFLAGS)
 
 install: $(PROGRAMS)
