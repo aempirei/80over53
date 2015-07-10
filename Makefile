@@ -10,6 +10,9 @@ INSTALL_PATH = /usr/local/bin
 
 all: bin $(PROGRAMS)
 
+lib:
+	mkdir lib
+
 bin:
 	mkdir bin
 
@@ -21,5 +24,5 @@ install: $(PROGRAMS)
 
 clean:
 	rm -rf bin
+	rm -rf lib
 	rm -f src/*.o
-	rm -f *~
