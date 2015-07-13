@@ -238,26 +238,34 @@ ssize_t recvfrom_fd_data(configuration * config, int fd, void *data, size_t data
 	return n;
 }
 
-int int_array_delete(int *xs, size_t *xs_n, size_t n) {
-
-	int x = xs[n];
-
-	while(++n < *xs_n)
-		xs[n - 1] = xs[n];
-
-	(*xs_n)--;
-	return x;
-}
-
-int int_array_pop(int *xs, size_t *xs_n) {
-	return int_array_delete(xs, xs_n, *xs_n - 1);
-}
-
-int int_array_shift(int *xs, size_t *xs_n) {
-	return int_array_delete(xs, xs_n, 0);
-}
-
 enum struct http_method : unsigned { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
+
+template <typename T>
+ssize_t
+process_rr_section(configuration *config, size_t offset, const void * data, size_t data_sz, size_t count, const char *section_name)
+{
+
+	for(size_t q_n = 1; q_n <= count; q_n++) {
+
+		T rr;
+		char rr_string[DNS_NAME_MAX_SZ * 2];
+
+		ssize_t n = rr.parse(offset, data, data_sz);
+		if(n == -1) {
+			fprintf(stderr, "dns %s #%d parse failed...\n", section_name, (int)q_n);
+			return -1;
+		}
+
+		offset = n;
+
+		if(config->verbose) {
+			rr.sprint(rr_string, sizeof(rr_string));
+			fprintf(config->fp, "dns %s #%d :: %s\n", section_name, (int)q_n, rr_string);
+		}
+	}
+
+	return offset;
+}
 
 void generate_http_request(configuration *config, void *data, ssize_t data_sz, std::set<int>& httpfdset) {
 
@@ -293,24 +301,17 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		fprintf(config->fp, "dns header :: %s\n", header_string);
 	}
 
-	for(size_t q_n = 1; q_n <= header.qdcount; q_n++) {
+	if((offset = process_rr_section<dns_question>(config, offset, data, data_sz, header.qdcount, "question")) = -1)
+		return;
 
-		dns_question question;
-		char question_string[DNS_NAME_MAX_SZ * 2];
+	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.ancount, "answer")) == -1)
+		return;
 
-		n = question.parse(offset, data, data_sz);
-		if(n == -1) {
-			fprintf(stderr, "dns question #%d parse failed...\n", (int)q_n);
-			return;
-		}
+	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.nscount, "nameserver")) == -1)
+		return;
 
-		offset = n;
-
-		if(config->verbose) {
-			question.sprint(question_string, sizeof(question_string));
-			fprintf(config->fp, "dns question #%d :: %s\n", (int)q_n, question_string);
-		}
-	}
+	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.arcount, "additional")) == -1)
+		return;
 
 	memset(&sin_to, 0, sizeof(sin_to));
 	sin_to.sin_family = AF_INET;

@@ -13,8 +13,10 @@
 #define DNS_LABEL_MAX_SZ ((1<<6)-1)
 #define DNS_NAME_MAX_SZ  ((1<<8)-1)
 #define DNS_TTL_MAX_SZ   ((1<<31)-1)
+#define DNS_MSG_MAX_SZ   (1<<9)
 
 enum struct dns_type : uint16_t {
+	ANY = 0,
 	A = 1,
 	AAAA = 28,
 	AFSDB = 18,
@@ -70,9 +72,22 @@ struct dns_question {
 	dns_type qtype = dns_type::A;
 	dns_class qclass = dns_class::IN;
 
-	ssize_t parse(size_t, const void *, size_t);
+	virtual ssize_t parse(size_t, const void *, size_t);
 
-	int sprint(char *, size_t);
+	virtual int sprint(char *, size_t);
+};
+
+struct dns_rr : dns_question {
+
+	uint16_t ttl = 0;
+
+	uint8_t rdata[DNS_MSG_MAX_SZ];
+
+	size_t rdata_sz = 0;
+
+	virtual ssize_t parse(size_t, const void *, size_t);
+
+	virtual int sprint(char *, size_t);
 };
 
 #pragma pack(push, 1)

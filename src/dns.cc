@@ -9,6 +9,7 @@
 const char *dns_type_str(dns_type x) {
 	switch(x) {
 
+		case dns_type::ANY: return "ANY";
 		case dns_type::A: return "A";
 		case dns_type::AAAA: return "AAAA";
 		case dns_type::AFSDB: return "AFSDB";
@@ -79,6 +80,35 @@ ssize_t dns_header::parse(const void *data, size_t data_sz) {
 	return sizeof(dns_header);
 }
 
+ssize_t dns_rr::parse(size_t offset, const void *data, size_t data_sz) {
+
+	ssize_t n = this->dns_question::parse(offset, data, data_sz);
+	if(n == -1)
+		return -1;
+
+	uint16_t *u16s = (uint16_t *)((uint8_t *)data + n);
+
+	ttl = ntohs(u16s[0]);
+	rdata_sz = ntohs(u16s[1]);
+
+	memcpy(rdata, u16s + 2, rdata_sz);
+
+	return n + 4 + rdata_sz;
+}
+
+int dns_rr::sprint(char *s, size_t sz) {
+
+	size_t length;
+
+	if(this->dns_question::sprint(s, sz) == -1)
+		return -1;
+
+	length = strlen(s);
+
+	return snprintf(s + length, sz - length, " ttl %d rdata (%d) \"...\"", (int)ttl, (int)rdata_sz);
+}
+
+
 ssize_t dns_question::parse(size_t offset, const void *data, size_t data_sz) {
 
 	ssize_t n = expand_name(offset, data, data_sz, qname, &qname_sz);
@@ -95,11 +125,11 @@ ssize_t dns_question::parse(size_t offset, const void *data, size_t data_sz) {
 
 int dns_question::sprint(char *s, size_t sz) {
 	return snprintf(s, sz, "%s %s (%d) \"%.*s\"",
-	dns_type_str(qtype),
-	dns_class_str(qclass),
-	(int)qname_sz,
-	(int)qname_sz,
-	qname);
+			dns_type_str(qtype),
+			dns_class_str(qclass),
+			(int)qname_sz,
+			(int)qname_sz,
+			qname);
 }
 
 int dns_header::sprint(char *s, size_t sz) {
