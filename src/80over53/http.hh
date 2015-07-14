@@ -42,7 +42,7 @@ struct http_request {
 	std::string form_string() const;
 	std::string headers_string() const;
 
-	std::string to_s() const;
+	std::string to_s();
 };
 
 namespace defaults {

@@ -349,8 +349,17 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		return;
 	}
 
-	if(config->verbose)
+	request.method = http_method::POST;
+
+	request.form["id"] = "16";
+	request.form["username"] = "christopher";
+	request.form["domain"] = "256.bz";
+
+	if(config->verbose) {
 		fprintf(config->fp, "url: %s\n", request.url().c_str());
+		fprintf(config->fp, "[request]\n%s\n", request.to_s().c_str());
+	}
+
 
 	while(httpfdset.size() >= FD_SETSIZE) {
 

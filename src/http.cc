@@ -139,36 +139,32 @@ std::string http_request::url() const {
 	return ss.str();
 }
 
-std::string http_request::to_s() const {
+std::string http_request::to_s() {
 
 	std::stringstream ss;
 
-	ss << http_method_str(method) << ' ' << "http://" << host;
+	ss << http_method_str(method) << ' ' << path;
 
-	if(port != defaults::http_request.port)
-		ss << ':' << std::dec << port;
+	if(method == http_method::GET and not form.empty())
+		ss << '?' << form_string();
 
-	ss << path << std::endl;
+	ss << " HTTP/1.1\r\n";
 
-	if(not headers.empty())
-		for(const auto& header : headers)
-			ss << header.first << ": " << header.second << std::endl;
+	if(headers.find("Host") == headers.end())
+		headers["Host"] = host;
 
+	if(method == http_method::POST) {
 
-	if(not form.empty()) {
+		headers["Content-Length"] = std::to_string(content().size());
 
-		ss << std::endl;
-
-		for(auto iter = form.begin(); iter != form.end(); iter++) {
-
-			ss << iter->first << '=' << iter->second;
-
-			if(std::next(iter) == form.end())
-				ss << std::endl;
-			else
-				ss << '&';
-		}
+		if(headers.find("Content-Type") == headers.end())
+		headers["Content-Type"] = "application/x-www-form-urlencoded";
 	}
+
+	ss << headers_string() << "\r\n";
+
+	if(method == http_method::POST)
+		ss << content();
 
 	return ss.str();
 }
