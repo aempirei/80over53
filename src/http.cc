@@ -74,6 +74,7 @@ const char *http_method_str(http_method x) {
 }
 
 std::string http_request::to_s() const {
+
 	std::stringstream ss;
 
 	ss << http_method_str(method) << ' ' << "http://" << host;
@@ -83,15 +84,19 @@ std::string http_request::to_s() const {
 
 	ss << path << std::endl;
 
-	if(not headers.empty()) {
+	if(not headers.empty())
 		for(const auto& header : headers)
-			ss << header << std::endl;
-	}
+			ss << header.first << ": " << header.second << std::endl;
+
 
 	if(not form.empty()) {
+
 		ss << std::endl;
+
 		for(auto iter = form.begin(); iter != form.end(); iter++) {
+
 			ss << iter->first << '=' << iter->second;
+
 			if(std::next(iter) == form.end())
 				ss << std::endl;
 			else

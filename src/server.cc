@@ -296,22 +296,31 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		fprintf(config->fp, "dns header :: %s\n", header_string);
 	}
 
-	if((offset = process_rr_section<dns_question>(config, offset, data, data_sz, header.qdcount, "question")) = -1)
+	if((offset = process_rr_section<dns_question>(config, offset, data, data_sz, header.qdcount, "question")) == -1)
 		return;
 
 	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.ancount, "answer")) == -1)
 		return;
 
-	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.nscount, "nameserver")) == -1)
+	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.nscount, "nameservers")) == -1)
 		return;
 
 	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.arcount, "additional")) == -1)
 		return;
 
+	request.headers["Host"] = request.host;
+	request.method = http_method::POST;
+	request.form["id"] = "0";
+	request.form["name"] = "Christopher Abad";
+	request.form["email"] = "aempirei@256.bz";
+
 	if(request.get_sockaddr((sockaddr *)&sin_to, sizeof(sin_to)) == nullptr) {
 		perror("http_request::get_sockaddr()");
 		return;
 	}
+
+	if(config->verbose)
+		fprintf(config->fp, "[http request]\n%s", request.to_s().c_str());
 
 	while(httpfdset.size() >= FD_SETSIZE) {
 

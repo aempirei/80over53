@@ -13,8 +13,8 @@ const char *http_method_str(http_method);
 
 #define HTTP_PATH_MAX_SZ 512
 
-using http_form = std::map<std::string,std::string>;
-using http_headers = std::list<std::string>;
+using http_form = std::map<std::string, std::string>;
+using http_headers = std::map<std::string, std::string>;
 
 struct http_request {
 
