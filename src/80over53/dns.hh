@@ -16,7 +16,8 @@
 #define DNS_MSG_MAX_SZ   (1<<9)
 
 enum struct dns_type : uint16_t {
-	ANY = 0,
+	SIG0 = 0,
+	ANY = 255,
 	A = 1,
 	AAAA = 28,
 	AFSDB = 18,

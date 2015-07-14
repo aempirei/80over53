@@ -80,6 +80,7 @@ struct configuration {
 	bool verbose = false;
     const char *locale = "";
 	uint32_t address = INADDR_ANY;
+	const char *domain = "$.256.bz";
 	uint16_t port = 53;
 	FILE *fp = stdout;
 };
@@ -116,6 +117,7 @@ void usage(const char *arg0) {
 	usage_print("-4 ip", "IPv4 bind address, default:", ip_string);
 	usage_print("-p port", "UDP bind port, default:", port_string);
     usage_print("-l locale", "use", "specified locale string");
+    usage_print("-d domain", "domain name, default:", default_config.domain);
 
     fputc('\n', stderr);
 }
@@ -162,6 +164,11 @@ int cliconfig(configuration * config, int argc, char **argv) {
 			case 'l':
 
 				config->locale = optarg;
+				break;
+
+			case 'd':
+				
+				config->domain = optarg;
 				break;
 
 			case 'h':
@@ -280,6 +287,8 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 
 	int fd;
 
+	dns_question question;
+
 	dns_header header;
 
 	n = header.parse(data, data_sz);
@@ -296,6 +305,28 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		fprintf(config->fp, "dns header :: %s\n", header_string);
 	}
 
+	if(header.qdcount > 0) {
+
+		if(question.parse(offset, data, data_sz) == -1) {
+			fprintf(stderr, "couldn't extract first QNAME\n");
+			return;
+		}
+
+		if(config->verbose) {
+
+			char q_str[DNS_NAME_MAX_SZ * 2];
+
+			question.sprint(q_str, sizeof(q_str));
+
+			fprintf(config->fp, "translating DNS QUESTION [ %s ] to HTTP REQUEST\n", q_str);
+		}
+
+		if(request.parse(question, config->domain) == -1) {
+			fprintf(stderr, "failed to translate DNS QUESTION\n");
+			return;
+		}
+	}
+
 	if((offset = process_rr_section<dns_question>(config, offset, data, data_sz, header.qdcount, "question")) == -1)
 		return;
 
@@ -307,12 +338,11 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 
 	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.arcount, "additional")) == -1)
 		return;
-
-	request.headers["Host"] = request.host;
-	request.method = http_method::POST;
-	request.form["id"] = "0";
-	request.form["name"] = "Christopher Abad";
-	request.form["email"] = "aempirei@256.bz";
+	
+	if(header.qdcount != 1 or header.ancount != 0 or header.nscount != 0 or header.arcount != 0) {
+		fprintf(stderr, "dns packet should contain only 1 question but had unexpected entries\n");
+		return;
+	}
 
 	if(request.get_sockaddr((sockaddr *)&sin_to, sizeof(sin_to)) == nullptr) {
 		perror("http_request::get_sockaddr()");

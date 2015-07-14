@@ -14,7 +14,7 @@
 http_request::http_request() : http_request(http_method::GET, "localhost", "/index.html", 80) {
 }
 
-http_request::http_request(http_method my_method, const std::string& my_host, const std::string& my_path, uint16_t my_port)
+http_request::http_request(http_method my_method, const char *my_host, const char *my_path, uint16_t my_port)
 : method(my_method), host(my_host), path(my_path), port(my_port)
 {
 }
@@ -105,4 +105,12 @@ std::string http_request::to_s() const {
 	}
 
 	return ss.str();
+}
+
+int http_request::parse(const dns_question& question, const char *domain) {
+
+	if(question.qtype != dns_type::TXT or question.qclass != dns_class::IN)
+		return -1;
+
+	return 0;
 }

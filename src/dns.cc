@@ -10,6 +10,7 @@ const char *dns_type_str(dns_type x) {
 	switch(x) {
 
 		case dns_type::ANY: return "ANY";
+		case dns_type::SIG0: return "SIG(0)";
 		case dns_type::A: return "A";
 		case dns_type::AAAA: return "AAAA";
 		case dns_type::AFSDB: return "AFSDB";

@@ -5,6 +5,8 @@
 #include <list>
 #include <string>
 
+#include <80over53/dns.hh>
+
 #pragma once
 
 enum struct http_method { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
@@ -26,9 +28,11 @@ struct http_request {
 	http_form form;
 
 	http_request();
-	http_request(http_method, const std::string&, const std::string&, uint16_t);
+	http_request(http_method, const char *, const char *, uint16_t);
 
 	sockaddr *get_sockaddr(sockaddr *, socklen_t) const;
+
+	int parse(const dns_question&, const char *);
 
 	std::string to_s() const;
 };
