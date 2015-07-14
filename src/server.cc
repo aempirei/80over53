@@ -287,6 +287,7 @@ ssize_t process_question(configuration *config, size_t offset, const void * data
 	}
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
+
 	if(connect(fd, (sockaddr *)&sin_to, sizeof(sin_to)) == -1) {
 		perror("connect()");
 		close(fd);
