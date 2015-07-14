@@ -246,14 +246,65 @@ ssize_t recvfrom_fd_data(configuration * config, int fd, void *data, size_t data
 	return n;
 }
 
-template <typename T>
+ssize_t process_question(configuration *config, size_t offset, const void * data, size_t data_sz, std::set<int>& fds) {
+
+	struct sockaddr_in sin_to;
+
+	dns_question question;
+	http_request request;
+
+	int fd;
+
+	ssize_t n = question.parse(offset, data, data_sz);
+	if(n == -1)
+		return -1;
+
+	offset = n;
+
+	if(config->verbose) {
+		char q_str[DNS_NAME_MAX_SZ * 2];
+		question.sprint(q_str, sizeof(q_str));
+		fprintf(config->fp, "DNS QUESTION :: %s\n", q_str);
+	}
+
+	if(request.parse(question, config->domain) == -1)
+		return -1;
+
+	if(request.get_sockaddr((sockaddr *)&sin_to, sizeof(sin_to)) == nullptr) {
+		perror("http_request::get_sockaddr()");
+		return -1;
+	}
+
+	request.method = http_method::POST;
+
+	request.form["id"] = "16";
+	request.form["username"] = "christopher";
+	request.form["domain"] = "256.bz";
+
+	if(config->verbose) {
+		fprintf(config->fp, "url: %s\n", request.url().c_str());
+		fprintf(config->fp, "[request]\n%s\n", request.to_s().c_str());
+	}
+
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	if(connect(fd, (sockaddr *)&sin_to, sizeof(sin_to)) == -1) {
+		perror("connect()");
+		close(fd);
+		return offset;
+	}
+
+	fds.insert(fd);
+
+	return offset;
+}
+
 ssize_t
 process_rr_section(configuration *config, size_t offset, const void * data, size_t data_sz, size_t count, const char *section_name)
 {
 
 	for(size_t q_n = 1; q_n <= count; q_n++) {
 
-		T rr;
+		dns_rr rr;
 		char rr_string[DNS_NAME_MAX_SZ * 2];
 
 		ssize_t n = rr.parse(offset, data, data_sz);
@@ -273,9 +324,7 @@ process_rr_section(configuration *config, size_t offset, const void * data, size
 	return offset;
 }
 
-void generate_http_request(configuration *config, void *data, ssize_t data_sz, std::set<int>& httpfdset, http_request& request) {
-
-	struct sockaddr_in sin_to;
+void process_dns_packet(configuration *config, void *data, ssize_t data_sz, std::set<int>& fds) {
 
 	size_t content_length;
 
@@ -302,7 +351,7 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 	if(config->verbose) {
 		char header_string[256];
 		header.sprint(header_string, sizeof(header_string));
-		fprintf(config->fp, "dns header :: %s\n", header_string);
+		fprintf(config->fp, "DNS HEADER :: %s\n", header_string);
 	}
 
 	if(header.is_response()) {
@@ -311,83 +360,39 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 	}
 
 	if((dns_opcode)header.opcode != dns_opcode::QUERY) {
-		fprintf(stderr, "ignoring  DNS OPCODE #%d (%s)\n", header.opcode, dns_opcode_str((dns_opcode)header.opcode));
+		fprintf(stderr, "ignoring DNS OPCODE #%d (%s)\n", header.opcode, dns_opcode_str((dns_opcode)header.opcode));
+		return;
 	}
 
-	if(header.qdcount > 0) {
-
-		if(question.parse(offset, data, data_sz) == -1) {
-			fprintf(stderr, "couldn't extract first QNAME\n");
+	for(size_t q_n = 1; q_n <= header.qdcount; q_n++) {
+		n = process_question(config, offset, data, data_sz, fds);
+		if(n == -1) {
+			fprintf(stderr, "couldn't process DNS QUESTION #%d\n", (int)q_n);
 			return;
 		}
 
-		if(config->verbose) {
-
-			char q_str[DNS_NAME_MAX_SZ * 2];
-
-			question.sprint(q_str, sizeof(q_str));
-
-			fprintf(config->fp, "translating DNS QUESTION [ %s ] to HTTP REQUEST\n", q_str);
-		}
-
-		if(request.parse(question, config->domain) == -1) {
-			fprintf(stderr, "failed to translate DNS QUESTION\n");
-			return;
-		}
+		offset = n;
 	}
 
-	if((offset = process_rr_section<dns_question>(config, offset, data, data_sz, header.qdcount, "question")) == -1)
+	if((offset = process_rr_section(config, offset, data, data_sz, header.ancount, "answer")) == -1)
 		return;
 
-	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.ancount, "answer")) == -1)
+	if((offset = process_rr_section(config, offset, data, data_sz, header.nscount, "nameservers")) == -1)
 		return;
 
-	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.nscount, "nameservers")) == -1)
+	if((offset = process_rr_section(config, offset, data, data_sz, header.arcount, "additional")) == -1)
 		return;
 
-	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.arcount, "additional")) == -1)
-		return;
-	
-	if(header.qdcount != 1 or header.ancount != 0 or header.nscount != 0 or header.arcount != 0) {
-		fprintf(stderr, "dns packet should contain only 1 question but had unexpected entries\n");
-		return;
-	}
+	while(fds.size() >= FD_SETSIZE) {
 
-	if(request.get_sockaddr((sockaddr *)&sin_to, sizeof(sin_to)) == nullptr) {
-		perror("http_request::get_sockaddr()");
-		return;
-	}
-
-	request.method = http_method::POST;
-
-	request.form["id"] = "16";
-	request.form["username"] = "christopher";
-	request.form["domain"] = "256.bz";
-
-	if(config->verbose) {
-		fprintf(config->fp, "url: %s\n", request.url().c_str());
-		fprintf(config->fp, "[request]\n%s\n", request.to_s().c_str());
-	}
-
-	while(httpfdset.size() >= FD_SETSIZE) {
-
-		fd = *httpfdset.begin();
+		fd = *fds.begin();
 
 		fprintf(stderr, "too many http connections open, closing fd #%d...", fd);
 
 		close(fd);
 
-		httpfdset.erase(fd);
+		fds.erase(fd);
 	}
-
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-	if(connect(fd, (sockaddr *)&sin_to, sizeof(sin_to)) == -1) {
-		perror("connect()");
-		close(fd);
-		return;
-	}
-
-	httpfdset.insert(fd);
 }
 
 void http_over_dns(configuration * config) {
@@ -395,8 +400,6 @@ void http_over_dns(configuration * config) {
 	struct sockaddr_in sin;
 
 	std::set<int> httpfdset;
-
-	http_request request;
 
 	int dnsfd = -1;
 	int maxfd;
@@ -534,7 +537,7 @@ void http_over_dns(configuration * config) {
 				}
 			} else {
 
-				generate_http_request(config, data, sz, httpfdset, request);
+				process_dns_packet(config, data, sz, httpfdset);
 
 				FD_CLR(dnsfd, &rfds);
 				left--;
