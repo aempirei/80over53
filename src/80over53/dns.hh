@@ -116,10 +116,10 @@ struct dns_header {
 	int sprint(char *, size_t);
 };
 
+#pragma pack(pop)
+
 const char *dns_type_str(dns_type);
 const char *dns_class_str(dns_class);
-
-#pragma pack(pop)
 
 #define DNS_NAME_FORMAT_LABEL		0x00
 #define DNS_NAME_FORMAT_POINTER		0xc0

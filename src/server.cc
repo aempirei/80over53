@@ -36,6 +36,7 @@
 #include <set>
 
 #include <80over53/dns.hh>
+#include <80over53/http.hh>
 
 /*
  * 80over53-server program logic
@@ -238,8 +239,6 @@ ssize_t recvfrom_fd_data(configuration * config, int fd, void *data, size_t data
 	return n;
 }
 
-enum struct http_method : unsigned { GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT };
-
 template <typename T>
 ssize_t
 process_rr_section(configuration *config, size_t offset, const void * data, size_t data_sz, size_t count, const char *section_name)
@@ -267,10 +266,7 @@ process_rr_section(configuration *config, size_t offset, const void * data, size
 	return offset;
 }
 
-void generate_http_request(configuration *config, void *data, ssize_t data_sz, std::set<int>& httpfdset) {
-
-	constexpr uint16_t http_port = 80;
-	constexpr http_method method = http_method::GET;
+void generate_http_request(configuration *config, void *data, ssize_t data_sz, std::set<int>& httpfdset, http_request& request) {
 
 	struct sockaddr_in sin_to;
 
@@ -278,7 +274,6 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 
 	char content[8192];
 	char abs_path[2048];
-	char ip_string[20];
 
 	ssize_t offset;
 	ssize_t n;
@@ -313,12 +308,9 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 	if((offset = process_rr_section<dns_rr>(config, offset, data, data_sz, header.arcount, "additional")) == -1)
 		return;
 
-	memset(&sin_to, 0, sizeof(sin_to));
-	sin_to.sin_family = AF_INET;
-	sin_to.sin_port = htons(http_port);
-	if(inet_pton(AF_INET, ip_string, &sin_to.sin_addr) == -1) {
-		perror("inet_pton()");
-		exit(EXIT_FAILURE);
+	if(request.get_sockaddr((sockaddr *)&sin_to, sizeof(sin_to)) == nullptr) {
+		perror("http_request::get_sockaddr()");
+		return;
 	}
 
 	while(httpfdset.size() >= FD_SETSIZE) {
@@ -343,6 +335,8 @@ void http_over_dns(configuration * config) {
 	struct sockaddr_in sin;
 
 	std::set<int> httpfdset;
+
+	http_request request;
 
 	int dnsfd = -1;
 	int maxfd;
@@ -415,7 +409,7 @@ void http_over_dns(configuration * config) {
 		exit(EXIT_FAILURE);
 	}
 
-	while(stop == 0) {
+	while(not stop) {
 
 		if(report != 0) {
 			configure_signal(report, sighandler_report);
@@ -480,7 +474,7 @@ void http_over_dns(configuration * config) {
 				}
 			} else {
 
-				generate_http_request(config, data, sz, httpfdset);
+				generate_http_request(config, data, sz, httpfdset, request);
 
 				FD_CLR(dnsfd, &rfds);
 				left--;

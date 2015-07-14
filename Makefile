@@ -16,7 +16,7 @@ lib:
 bin:
 	mkdir bin
 
-bin/80over53-server: src/server.o src/dns.o
+bin/80over53-server: src/server.o src/dns.o src/http.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBFLAGS)
 
 install: $(PROGRAMS)
