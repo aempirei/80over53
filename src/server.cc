@@ -104,7 +104,7 @@ void usage(const char *arg0) {
 	char ip_string[20];
 	char port_string[20];
 
-	if(inet_ntop(AF_INET, &default_config.address, ip_string, sizeof(ip_string)) == NULL) {
+	if(inet_ntop(AF_INET, &default_config.address, ip_string, sizeof(ip_string)) == nullptr) {
 		perror("inet_ntop()");
 		exit(EXIT_FAILURE);
 	}
@@ -151,7 +151,7 @@ int cliconfig(configuration * config, int argc, char **argv) {
 
 			case 'p':
 
-				port = strtoul(optarg, NULL, 0);
+				port = strtoul(optarg, nullptr, 0);
 				if(port == ULONG_MAX && errno == ERANGE) {
 					perror("strtoul()");
 					exit(EXIT_FAILURE);
@@ -228,7 +228,7 @@ ssize_t recvfrom_fd_data(configuration * config, int fd, void *data, size_t data
 
 		char buf[20];
 
-		if(inet_ntop(AF_INET, &(p_sin->sin_addr), buf, sizeof(buf)) == NULL) {
+		if(inet_ntop(AF_INET, &(p_sin->sin_addr), buf, sizeof(buf)) == nullptr) {
 			perror("inet_ntop()");
 			exit(EXIT_FAILURE);
 		}
@@ -349,7 +349,7 @@ void http_over_dns(configuration * config) {
 
 	unsigned char data[DATA_SZ];
 
-	if (setlocale(LC_CTYPE, config->locale) == NULL) {
+	if (setlocale(LC_CTYPE, config->locale) == nullptr) {
 		fprintf(stderr, "failed to set locale LC_CTYPE=\"%s\"\n", config->locale);
 		exit(EXIT_FAILURE);
 	}
@@ -360,7 +360,7 @@ void http_over_dns(configuration * config) {
 
 		if(config->address == INADDR_ANY) {
 			strcpy(buf, "*");
-		} else if(inet_ntop(AF_INET, &config->address, buf, sizeof(buf)) == NULL) {
+		} else if(inet_ntop(AF_INET, &config->address, buf, sizeof(buf)) == nullptr) {
 			perror("inet_ntop()");
 			exit(EXIT_FAILURE);
 		}
@@ -445,7 +445,7 @@ void http_over_dns(configuration * config) {
 					(int)FD_SETSIZE + 1);
 		}
 
-		int left = select(maxfd + 1, &rfds, NULL, NULL, &tv);
+		int left = select(maxfd + 1, &rfds, nullptr, nullptr, &tv);
 
 		if(left == -1) {
 
