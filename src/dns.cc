@@ -6,6 +6,19 @@
 
 #define dfprintf(...)
 
+const char *dns_opcode_str(dns_opcode x) {
+	switch(x) {
+
+		case dns_opcode::QUERY: return "QUERY";
+		case dns_opcode::IQUERY: return "IQUERY";
+		case dns_opcode::STATUS: return "STATUS";
+		case dns_opcode::NOTIFY: return "NOTIFY";
+		case dns_opcode::UPDATE: return "UPDATE";
+
+		default: return nullptr;
+	}
+}
+
 const char *dns_type_str(dns_type x) {
 	switch(x) {
 
@@ -136,8 +149,8 @@ int dns_question::sprint(char *s, size_t sz) {
 int dns_header::sprint(char *s, size_t sz) {
 	return snprintf(s, sz, "id=%d %s %s%s%s%s%s z=%d %s QD(%d) AN(%d) NS(%d) AR(%d)",
 			id,
-			qr == 0 ? "QUERY" : "RESPONSE",
-			opcode == 0 ? "QUERY" : opcode == 1 ? "IQUERY" : opcode == 2 ? "STATUS" : "RESERVED",
+			is_query() ? "QUERY" : "RESPONSE",
+			dns_opcode_str((dns_opcode)opcode),
 			aa ? " AUTHORITATIVE" : "",
 			tc ? " TRUNCATED" :  "",
 			rd ? " RD" : "",
@@ -218,6 +231,14 @@ ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *labe
 
 		return -1;
 	}
+}
+
+bool dns_header::is_query() const {
+	return not is_response();
+}
+
+bool dns_header::is_response() const {
+	return qr;
 }
 
 size_t get_label_sz(size_t offset, const void *data) {

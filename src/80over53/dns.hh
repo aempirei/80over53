@@ -64,6 +64,14 @@ enum struct dns_class : uint16_t {
 	ANY = 255
 };
 
+enum struct dns_opcode : uint8_t {
+	QUERY = 0,
+	IQUERY = 1,
+	STATUS = 2,
+	NOTIFY = 4,
+	UPDATE = 5
+};
+
 struct dns_question {
 
 	char qname[DNS_NAME_MAX_SZ + 1];
@@ -115,12 +123,16 @@ struct dns_header {
 	ssize_t parse(const void *, size_t);
 
 	int sprint(char *, size_t);
+
+	bool is_query() const;
+	bool is_response() const;
 };
 
 #pragma pack(pop)
 
 const char *dns_type_str(dns_type);
 const char *dns_class_str(dns_class);
+const char *dns_opcode_str(dns_opcode);
 
 #define DNS_NAME_FORMAT_LABEL		0x00
 #define DNS_NAME_FORMAT_POINTER		0xc0

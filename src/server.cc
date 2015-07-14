@@ -305,6 +305,15 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		fprintf(config->fp, "dns header :: %s\n", header_string);
 	}
 
+	if(header.is_response()) {
+		fprintf(stderr, "ignoring DNS RESPONSE\n");
+		return;
+	}
+
+	if((dns_opcode)header.opcode != dns_opcode::QUERY) {
+		fprintf(stderr, "ignoring  DNS OPCODE #%d (%s)\n", header.opcode, dns_opcode_str((dns_opcode)header.opcode));
+	}
+
 	if(header.qdcount > 0) {
 
 		if(question.parse(offset, data, data_sz) == -1) {
@@ -359,7 +368,6 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		fprintf(config->fp, "url: %s\n", request.url().c_str());
 		fprintf(config->fp, "[request]\n%s\n", request.to_s().c_str());
 	}
-
 
 	while(httpfdset.size() >= FD_SETSIZE) {
 
