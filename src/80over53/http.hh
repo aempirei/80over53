@@ -23,16 +23,24 @@ struct http_request {
 	http_method method;
 	std::string host;
 	std::string path;
+	bool ssl;
 	uint16_t port;
 	http_headers headers;
 	http_form form;
 
 	http_request();
-	http_request(http_method, const char *, const char *, uint16_t);
+	http_request(http_method, const char *, const char *,  bool, uint16_t);
+	http_request(http_method, const char *, const char *,  bool);
 
 	sockaddr *get_sockaddr(sockaddr *, socklen_t) const;
 
 	int parse(const dns_question&, const char *);
+
+	std::string url() const;
+	std::string content() const;
+
+	std::string form_string() const;
+	std::string headers_string() const;
 
 	std::string to_s() const;
 };
@@ -40,3 +48,4 @@ struct http_request {
 namespace defaults {
 	extern ::http_request http_request;
 }
+

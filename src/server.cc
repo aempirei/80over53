@@ -350,7 +350,7 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 	}
 
 	if(config->verbose)
-		fprintf(config->fp, "[http request]\n%s", request.to_s().c_str());
+		fprintf(config->fp, "url: %s\n", request.url().c_str());
 
 	while(httpfdset.size() >= FD_SETSIZE) {
 
@@ -363,9 +363,13 @@ void generate_http_request(configuration *config, void *data, ssize_t data_sz, s
 		httpfdset.erase(fd);
 	}
 
-	// FIXME: this should really be SOCK_STREAM and then a connect() to the destination HTTP server
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	if(connect(fd, (sockaddr *)&sin_to, sizeof(sin_to)) == -1) {
+		perror("connect()");
+		close(fd);
+		return;
+	}
 
-	fd = socket(AF_INET, SOCK_DGRAM, 0);
 	httpfdset.insert(fd);
 }
 

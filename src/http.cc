@@ -11,11 +11,16 @@
 
 #define dfprintf(...)
 
-http_request::http_request() : http_request(http_method::GET, "localhost", "/index.html", 80) {
+http_request::http_request() : http_request(http_method::GET, "localhost", "/index.html", false) {
 }
 
-http_request::http_request(http_method my_method, const char *my_host, const char *my_path, uint16_t my_port)
-: method(my_method), host(my_host), path(my_path), port(my_port)
+http_request::http_request(http_method my_method, const char *my_host, const char *my_path, bool my_ssl)
+: http_request(my_method, my_host, my_path, my_ssl, my_ssl ? 443 : 80)
+{
+}
+
+http_request::http_request(http_method my_method, const char *my_host, const char *my_path, bool my_ssl, uint16_t my_port)
+: method(my_method), host(my_host), path(my_path), ssl(my_ssl), port(my_port)
 {
 }
 
@@ -71,6 +76,67 @@ const char *http_method_str(http_method x) {
 	}
 
 	return nullptr;
+}
+
+std::string http_request::form_string() const {
+
+	std::stringstream ss;
+
+	for(auto iter = form.begin(); iter != form.end(); iter++) {
+		ss << iter->first << '=' << iter->second;
+		if(std::next(iter) != form.end())
+			ss << '&';
+	}
+
+	return ss.str();
+}
+
+std::string http_request::headers_string() const {
+
+	std::stringstream ss;
+
+	for(const auto& header : headers)
+		ss << header.first << ": " << header.second << "\r\n";
+
+	return ss.str();
+}
+
+std::string http_request::content() const {
+
+	switch(method) {
+
+		case http_method::POST:
+
+			return form_string();
+
+		case http_method::GET:
+		case http_method::HEAD:
+		case http_method::PUT:
+		case http_method::DELETE:
+		case http_method::TRACE:
+		case http_method::CONNECT:
+
+		default:
+
+			return "";
+	}
+}
+
+std::string http_request::url() const {
+
+	std::stringstream ss;
+
+	ss << "http" << (ssl ? "s" : "" ) << "://" << host;
+
+	if((ssl and port == 443) or (not ssl and port == 80))
+		ss << ':' << std::dec << port;
+
+	ss << path;
+	
+	if(method == http_method::GET and not form.empty())
+		ss << '?' << form_string();
+
+	return ss.str();
 }
 
 std::string http_request::to_s() const {
