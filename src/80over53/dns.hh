@@ -121,11 +121,21 @@ const char *dns_class_str(dns_class);
 
 #pragma pack(pop)
 
+#define DNS_NAME_FORMAT_LABEL		0x00
+#define DNS_NAME_FORMAT_POINTER		0xc0
+#define DNS_NAME_FORMAT_MASK		0xc0
+#define DNS_LABEL_SZ_MASK			0x3f
+#define DNS_POINTER_MASK			0x3fff
+
 ssize_t expand_label(size_t, const void *, size_t, char *, size_t *);
 ssize_t expand_name(size_t, const void *, size_t, char *, size_t *);
 
 size_t get_label_sz(size_t, const void *);
 size_t get_pointer_offset(size_t, const void *);
 
-bool is_label(size_t, const void *);
-bool is_pointer(size_t, const void *);
+size_t get_name_format(size_t, const void *);
+
+bool is_empty_label(size_t, const void *);
+
+bool is_name_label(size_t, const void *);
+bool is_name_pointer(size_t, const void *);

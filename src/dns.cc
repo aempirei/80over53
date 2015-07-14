@@ -191,7 +191,7 @@ ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *labe
 
 	dfprintf(stderr, "expanding label @ %d\n", (int)offset);
 
-	if(is_label(offset, data)) {
+	if(is_name_label(offset, data)) {
 
 		*label_sz = get_label_sz(offset, data);
 		const char *label_ptr = (const char *)data + offset + 1;
@@ -202,7 +202,7 @@ ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *labe
 
 		return (ssize_t)*label_sz + 1;
 
-	} else if(is_pointer(offset, data)) {
+	} else if(is_name_pointer(offset, data)) {
 
 		const size_t pointer_offset = get_pointer_offset(offset, data);
 
@@ -221,19 +221,27 @@ ssize_t expand_label(size_t offset, const void *data, size_t data_sz, char *labe
 
 size_t get_label_sz(size_t offset, const void *data) {
 	const uint8_t *p = (const uint8_t *)data + offset;
-	return *p & 0x3f;
+	return ( *p & DNS_LABEL_SZ_MASK );
+}
+
+bool is_empty_label(size_t offset, const void *data) {
+	return is_name_label(offset, data) and get_label_sz(offset, data) == 0;
 }
 
 size_t get_pointer_offset(size_t offset, const void *data) {
 	const uint8_t *p = (const uint8_t *)data + offset;
-	return ( (size_t)256 * p[0] + p[1] ) & (size_t)0x3fff;
-}
-bool is_label(size_t offset, const void *data) {
-	const uint8_t *p = (const uint8_t *)data + offset;
-	return ( *p & 0xc0 ) == 0x00;
+	return ( (size_t)256 * p[0] + p[1] ) & DNS_POINTER_MASK ;
 }
 
-bool is_pointer(size_t offset, const void *data) {
-	const uint8_t *p = (const uint8_t *)data;
-	return ( *p & 0xc0 ) == 0xc0;
+size_t get_name_format(size_t offset, const void *data) {
+	const uint8_t *p = (const uint8_t *)data + offset;
+	return ( *p & DNS_NAME_FORMAT_MASK );
+}
+
+bool is_name_label(size_t offset, const void *data) {
+	return get_name_format(offset, data) == DNS_NAME_FORMAT_LABEL;
+}
+
+bool is_name_pointer(size_t offset, const void *data) {
+	return get_name_format(offset, data) == DNS_NAME_FORMAT_POINTER;
 }
