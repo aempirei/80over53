@@ -327,11 +327,6 @@ process_rr_section(configuration *config, size_t offset, const void * data, size
 
 void process_dns_packet(configuration *config, void *data, ssize_t data_sz, std::set<int>& fds) {
 
-	size_t content_length;
-
-	char content[8192];
-	char abs_path[2048];
-
 	ssize_t offset;
 	ssize_t n;
 

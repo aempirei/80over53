@@ -1,6 +1,7 @@
 CXX = g++
 CPPFLAGS = -Isrc. -Wall
-CXXFLAGS = -Wall -Isrc -pedantic -std=gnu++11 -O2 -Wno-unused-variable
+CXXFLAGS = -Wall -Isrc -pedantic -std=gnu++11 -O2
+# -Wno-unused-variable
 LIBFLAGS =
 # -Llib -l80over53
 PROGRAMS = bin/80over53-server
